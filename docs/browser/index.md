@@ -22,13 +22,6 @@ It has no runtime dependencies and sets no cookies unless you configure one. The
 points put nothing on `window` unless asked; the script-tag build adds
 `window.ClearIdeasAnalytics`.
 
-::: tip Versions
-These docs follow the `main` branch. Features listed under *Unreleased* in the
-[changelog](https://github.com/clearideas/consent-analytics/blob/main/CHANGELOG.md)
-(consent categories, the settings link, the plugin directory, gated scripts, the
-`credentials` option, ...) are not in `0.1.1`, the current release on npm.
-:::
-
 ## Entry points
 
 | Import | For |

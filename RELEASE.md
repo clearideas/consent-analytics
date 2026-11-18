@@ -34,7 +34,7 @@ Use a reviewed source snapshot or a reviewed and sanitized history. Replacing an
 
 ## Stable release
 
-The current stable version is `0.1.1`, published with the `latest` tag after production API and browser integration checks passed. Consumers pin this stable version. The historical `v0.1.0` GitHub release is preserved; it predates the current public package integration. Future prereleases use `next` and must not move `latest`.
+Stable releases use the `latest` dist-tag. Prereleases use `next`. The collector publishes with an exact dependency on the corresponding server library version.
 
 The release workflow uses npm trusted publishing (OIDC), with no publish token.
 Configure the package's trusted publisher for the final Clear Ideas repository name

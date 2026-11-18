@@ -6,9 +6,6 @@ what your data policy allows, and stores it in your database. It implements the 
 API in [`spec/openapi.yaml`](https://github.com/clearideas/consent-analytics/blob/main/spec/openapi.yaml)
 (v1.1), and runs as its own server or inside your existing API.
 
-> **Status: 0.1.0, not yet published on npm.** Until it is, install it from a checkout of
-> the repository (`npm install ../consent-analytics/server`).
-
 **[Documentation](https://github.com/clearideas/consent-analytics/blob/main/docs/server/index.md)** ·
 [Quick start](https://github.com/clearideas/consent-analytics/blob/main/docs/server/quickstart.md) ·
 [Production guide](https://github.com/clearideas/consent-analytics/blob/main/docs/server/production.md)
@@ -45,7 +42,11 @@ Node.js 22.12 or newer (the SQLite store needs 22.13). The package is ESM; Commo
 
 ## Quick start
 
-On its own, with SQLite:
+```sh
+npm install @clearideas/consent-analytics-server
+```
+
+To run the collector with SQLite:
 
 ```ts
 import { createCollector, trustedHeaderGeo } from '@clearideas/consent-analytics-server'

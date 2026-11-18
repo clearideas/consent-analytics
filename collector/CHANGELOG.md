@@ -1,6 +1,6 @@
 # Changelog: @clearideas/consent-analytics-collector
 
-## Unreleased (0.1.0)
+## 0.1.0 — November 18, 2026
 
 - A standalone collector on `@clearideas/consent-analytics-server`, configured with environment variables (`loadConfig`), validated all at once (every problem listed; `--check`).
 - **Modes:** `api`, `worker` and `all`; `/healthz`, `/readyz` and Prometheus `/metrics` in every mode; graceful shutdown (worker and retention first, then HTTP with buffer flushing, then connections).

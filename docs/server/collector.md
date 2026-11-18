@@ -14,15 +14,12 @@ already run, use the [library](./express.md) instead: it's one middleware.
 
 ## Run it
 
-From a checkout of the repository (until the package is published):
+Save a [site configuration](#sites) as `sites.json`, then install and start the collector:
 
 ```sh
-(cd server && npm ci && npm run build)
-cd collector && npm ci && npm run build
-SITES_FILE=./sites.example.json node dist/cli.js
+npm install @clearideas/consent-analytics-collector
+SITES_FILE=./sites.json npx consent-analytics-collector
 ```
-
-Once published: `npx @clearideas/consent-analytics-collector`.
 
 It listens on port 8787 and stores to SQLite in `./data/analytics.db`. `--check` validates
 the configuration and exits. With an invalid configuration the collector refuses to start and

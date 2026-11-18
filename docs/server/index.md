@@ -14,11 +14,6 @@ policy allows, and stores it in your database. Three ways to run one:
 | **Standalone collector** (`@clearideas/consent-analytics-collector`) | You want a separate service, configured with environment variables: a CLI and a Docker image. | [Standalone collector](./collector.md) |
 | **Your own** | You use another language or platform. | [Collector API (v1)](../api-contract.md) |
 
-::: tip Package status
-Both collector packages are at 0.1.0 and not yet published on npm. Until they are, install
-them from a checkout of the repository (`server/`, `collector/`).
-:::
-
 ## What the library does
 
 - Implements the [collector API](../api-contract.md): `GET /v1/context`, `POST /v1/events`,

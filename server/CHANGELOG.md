@@ -1,6 +1,6 @@
 # Changelog: @clearideas/consent-analytics-server
 
-## Unreleased (0.1.0)
+## 0.1.0 — November 18, 2026
 
 - Protocol module generated from `spec/openapi.yaml` 1.1.0:
   - `validate()` for every schema

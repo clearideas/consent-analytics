@@ -22,11 +22,6 @@ own events, within what the visitor allowed. MIT licensed, no runtime dependenci
 [Quick start](https://content-analytics.clearideas.com/getting-started) ·
 [Changelog](https://github.com/clearideas/consent-analytics/blob/main/CHANGELOG.md)
 
-> **Versions.** This README and the documentation follow the `main` branch. Features under
-> *Unreleased* in the changelog (consent categories, the settings link, the plugin
-> directory, gated scripts, `credentials`, ...) are not in `0.1.1`, the current release on
-> npm.
-
 ## Install
 
 ```sh
@@ -91,12 +86,12 @@ points.
 
 The library needs a collector that implements the
 [collector API](https://content-analytics.clearideas.com/api-contract).
-This repository has two, not yet published on npm:
+Two collector packages are available:
 
-- [`server/`](https://github.com/clearideas/consent-analytics/tree/main/server): the
+- [`@clearideas/consent-analytics-server`](https://www.npmjs.com/package/@clearideas/consent-analytics-server), the
   collector library, to mount in your own API (Express, `node:http`, Fetch platforms), with
   stores for MongoDB, Postgres, MySQL, DynamoDB and SQLite, Redis, SQS and IPinfo.
-- [`collector/`](https://github.com/clearideas/consent-analytics/tree/main/collector): the
+- [`@clearideas/consent-analytics-collector`](https://www.npmjs.com/package/@clearideas/consent-analytics-collector), the
   same as a standalone service, configured with environment variables, with a Docker image.
 
 Or write your own in any language, following the contract.

@@ -7,16 +7,9 @@ description: 'A collector with the library in a few lines: a standalone server w
 
 ## Install
 
-From a checkout of the repository (until the package is published):
-
 ```sh
-git clone https://github.com/clearideas/consent-analytics.git
-(cd consent-analytics/server && npm ci && npm run build)
-# in your project:
-npm install ../consent-analytics/server
+npm install @clearideas/consent-analytics-server
 ```
-
-Once published: `npm install @clearideas/consent-analytics-server`.
 
 ## A standalone server with SQLite
 
