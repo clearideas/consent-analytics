@@ -19,6 +19,7 @@ describe('readScriptConfig', () => {
           'data-api-base-url': TEST_API,
           'data-site-key': 'my-site',
           'data-cookie-domain': 'example.com',
+          'data-credentials': 'include',
           'data-website-base-url': 'https://example.com/',
           'data-debug': 'true',
           'data-banner': 'false',
@@ -29,12 +30,18 @@ describe('readScriptConfig', () => {
       apiBaseUrl: TEST_API,
       siteKey: 'my-site',
       cookieDomain: 'example.com',
+      credentials: 'include',
       websiteBaseUrl: 'https://example.com/',
       debug: true,
       banner: false,
       routeChanges: 'manual',
     })
   })
+})
+
+it('ignores an unknown data-credentials value', async () => {
+  const { readScriptConfig } = await import('../src/script')
+  expect(readScriptConfig(scriptTag({ 'data-credentials': 'always' }))).toEqual({})
 })
 
 describe('autoInit', () => {

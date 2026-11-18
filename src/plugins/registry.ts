@@ -159,7 +159,7 @@ export function resolvePluginSpecs(config: AnalyticsConfig): PluginSpec[] {
     )
   }
 
-  // The directory of common services (see docs/THIRD_PARTY.md).
+  // The directory of common services (see docs/browser/third-party.md).
   const { hubspot, intercom, metaPixel, linkedInInsight, microsoftClarity, hotjar } = integrations
   if (hubspot) {
     specs.push(

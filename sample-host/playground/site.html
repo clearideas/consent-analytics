@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/assets/site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="logo" href="/site/" data-nav>Example<span>.</span></a>
+      <nav aria-label="Demo site">
+        <a href="/site/" data-nav>Home</a>
+        <a href="/site/pricing" data-nav>Pricing</a>
+        <a href="/site/docs" data-nav>Docs</a>
+        <a href="https://example.org/" data-outbound data-testid="outbound">example.org ↗</a>
+      </nav>
+    </header>
+
+    <main id="page" class="page"></main>
+
+    <section class="try" aria-label="Visitor actions">
+      <button id="ev-signup" type="button">Start free trial <code>sign_up</code></button>
+      <button id="ev-purchase" type="button">Buy Pro · $99 <code>purchase</code></button>
+      <button id="ev-custom" type="button">Subscribe <code>Newsletter Signup</code></button>
+      <button id="ev-error" type="button">Report a problem <code>error</code></button>
+    </section>
+
+    <footer class="site-footer">
+      <span>© Example, a demo website</span>
+      <a href="/site/privacy" data-nav>Privacy</a>
+      <button id="manage-cookies" type="button" class="link">Cookie settings</button>
+    </footer>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+
+    <script src="/playground-config.js"></script>
+    <script src="/assets/wiretap.js"></script>
+    <script type="module" src="/assets/site.js"></script>
+  </body>
+</html>

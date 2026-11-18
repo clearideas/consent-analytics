@@ -1,11 +1,15 @@
-// The browser client against the real reference collector (sample-host), in-process.
-// Proves the two sides of the contract agree: nothing the client sends is rejected.
-import { describe, expect, it } from 'vitest'
+// The browser client against real collectors, in-process: the reference collector
+// (sample-host) and the collector library (server/). Proves both sides of the contract
+// agree: nothing the client sends is rejected.
+import { beforeEach, describe, expect, it } from 'vitest'
 
-import { hostApi, makeAdapter, makeConfig, setPageHidden, settle } from './helpers'
+import { hostApi, makeAdapter, makeConfig, serverApi, setPageHidden, settle } from './helpers'
+
+type Host = Awaited<ReturnType<typeof hostApi>> | Awaited<ReturnType<typeof serverApi>>
+let connectHost: typeof hostApi | typeof serverApi = hostApi
 
 async function start(options: Parameters<typeof hostApi>[0] = {}, config = {}) {
-  const host = await hostApi(options)
+  const host: Host = await connectHost(options)
   const lib = await import('../src/index')
   const harness = makeAdapter()
   const analytics = lib.initAnalytics(makeConfig({ batchSize: 1, ...config }), harness.adapter)
@@ -13,13 +17,24 @@ async function start(options: Parameters<typeof hostApi>[0] = {}, config = {}) {
   return { host, analytics, ...harness }
 }
 
-function rejections(host: Awaited<ReturnType<typeof hostApi>>) {
+function rejections(host: Host) {
   return host.responses.filter(
     r => r.status >= 400 || (r.path === '/v1/events' && r.body?.rejected?.length),
   )
 }
 
-describe('client ⇄ reference collector', () => {
+// The first test imports the reference collector cold (Hono, Ajv compiling the spec, YAML);
+// under coverage instrumentation and a full parallel run that alone can approach the default
+// 5 s timeout, so this file allows more time. Behavior is unaffected.
+// Both collectors: the reference collector (sample-host) and the collector library (server/).
+describe.each([
+  ['reference collector (sample-host)', hostApi],
+  ['collector library (server/)', serverApi],
+] as const)('client ⇄ %s', { timeout: 20_000 }, (_name, connect) => {
+  beforeEach(() => {
+    connectHost = connect
+  })
+
   it('visitor outside the consent region: full tracking, nothing rejected', async () => {
     window.history.replaceState(null, '', '/pricing?utm_source=news&token=SECRET')
     const { host, analytics, navigate } = await start({ country: 'US' })

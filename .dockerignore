@@ -5,3 +5,7 @@ test-results
 playwright-report
 sample-host/data
 .git
+server/dist
+server/.cache
+collector/dist
+collector/data

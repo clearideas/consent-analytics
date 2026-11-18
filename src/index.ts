@@ -63,6 +63,7 @@ import {
   getDeviceBucket,
   getViewportBucket,
   normalizeOutboundLink,
+  requestCredentials,
   sanitizeAnalyticsText,
   sanitizeEventUrls,
 } from './core'
@@ -96,6 +97,7 @@ import {
   getSiteKey,
   STORAGE_KEYS,
 } from './types'
+import { observeWebVitals } from './web-vitals'
 
 // Fetch the consent policy for this visitor (GET /v1/context) unless a fresh one is
 // cached for this browser session or was supplied with the page (initialContext).
@@ -127,7 +129,7 @@ async function fetchContext(config: AnalyticsConfig): Promise<void> {
       getSiteKey(config),
     )}`
     const response = await fetch(url, {
-      credentials: 'omit',
+      credentials: requestCredentials(config),
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     })
@@ -674,103 +676,21 @@ function createAnalyticsInternal(config: AnalyticsConfig, adapter: FrameworkAdap
     // Auto-track page exit when the page is hidden or unloaded
     pageHiddenHandlers.push(() => trackPageExit(trackEventNow))
 
-    // Auto-track web vitals
-    if (typeof window !== 'undefined' && typeof PerformanceObserver !== 'undefined') {
-      const observe = (entryTypes: string[], callback: PerformanceObserverCallback) => {
-        const observer = new PerformanceObserver(callback)
-        observer.observe({ entryTypes })
-        cleanup.push(() => observer.disconnect())
-      }
-
-      // Track Largest Contentful Paint (LCP)
-      try {
-        observe(['largest-contentful-paint'], list => {
-          const entries = list.getEntries()
-          const lastEntry = entries[entries.length - 1]
-          if (lastEntry) {
-            trackEventWrapper('web_vital', {
-              name: 'LCP',
-              value: Math.round(lastEntry.startTime),
-              ...getPageContext(),
-            })
-          }
-        })
-      } catch {
-        debugLog(config, 'LCP observer not supported')
-      }
-
-      // Track First Input Delay (FID)
-      try {
-        observe(['first-input'], list => {
-          list.getEntries().forEach((entry: any) => {
-            trackEventWrapper('web_vital', {
-              name: 'FID',
-              value: Math.round(entry.processingStart - entry.startTime),
-              ...getPageContext(),
-            })
-          })
-        })
-      } catch {
-        debugLog(config, 'FID observer not supported')
-      }
-
-      // Track Cumulative Layout Shift (CLS)
-      try {
-        let clsValue = 0
-        observe(['layout-shift'], list => {
-          list.getEntries().forEach((entry: any) => {
-            if (!entry.hadRecentInput) {
-              clsValue += entry.value
-            }
-          })
-        })
-
-        // Report CLS when the page is hidden or unloaded
-        pageHiddenHandlers.push(() => {
-          if (clsValue > 0) {
-            trackEventNow('web_vital', {
-              name: 'CLS',
-              value: Math.round(clsValue * 1000) / 1000, // Round to 3 decimal places
-              ...currentPageContext,
-            })
-          }
-        })
-      } catch {
-        debugLog(config, 'CLS observer not supported')
-      }
-
-      // Track First Contentful Paint (FCP)
-      try {
-        observe(['paint'], list => {
-          list.getEntries().forEach((entry: any) => {
-            trackEventWrapper('web_vital', {
-              name: 'FCP',
-              value: Math.round(entry.startTime),
-              ...getPageContext(),
-            })
-          })
-        })
-      } catch {
-        debugLog(config, 'FCP observer not supported')
-      }
-
-      // Track Time to First Byte (TTFB)
-      try {
-        observe(['navigation'], list => {
-          list.getEntries().forEach((entry: any) => {
-            const ttfb = entry.responseStart - entry.requestStart
-            if (ttfb > 0) {
-              trackEventWrapper('web_vital', {
-                name: 'TTFB',
-                value: Math.round(ttfb),
-                ...getPageContext(),
-              })
-            }
-          })
-        })
-      } catch {
-        debugLog(config, 'TTFB observer not supported')
-      }
+    // Auto-track web vitals (see web-vitals.ts). Load metrics describe the page the visitor
+    // landed on; the others, the page being viewed when they are reported.
+    if (typeof window !== 'undefined') {
+      const landingContext = currentPageContext
+      const contextFor = (name: string) =>
+        ['LCP', 'FCP', 'TTFB'].includes(name) ? landingContext : currentPageContext
+      observeWebVitals({
+        report: (name, value) =>
+          trackEventWrapper('web_vital', { name, value, ...contextFor(name) }),
+        reportNow: (name, value) =>
+          trackEventNow('web_vital', { name, value, ...contextFor(name) }),
+        onHidden: handler => pageHiddenHandlers.push(handler),
+        onCleanup: stop => cleanup.push(stop),
+        debug: message => debugLog(config, message),
+      })
     }
 
     // Auto-track additional metrics

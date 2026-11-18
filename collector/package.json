@@ -1,0 +1,61 @@
+{
+  "name": "@clearideas/consent-analytics-collector",
+  "version": "0.1.0",
+  "description": "Standalone collector for @clearideas/consent-analytics: configured by environment variables, with database, queue and cache drivers included. Also available as a Docker image.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Clear Ideas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearideas/consent-analytics.git",
+    "directory": "collector"
+  },
+  "homepage": "https://github.com/clearideas/consent-analytics/tree/main/collector#readme",
+  "bin": {
+    "consent-analytics-collector": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pretest": "node ../scripts/ensure-deps.mjs . --built ../server",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run type-check && npm test && npm run build && npm run check:package",
+    "check:package": "node scripts/check-package.mjs"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1162.0",
+    "@aws-sdk/client-sqs": "3.1164.0",
+    "@aws-sdk/lib-dynamodb": "3.1162.0",
+    "@clearideas/consent-analytics-server": "file:../server",
+    "@redis/client": "6.3.1",
+    "mongodb": "7.8.0",
+    "mysql2": "3.24.5",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

@@ -40,9 +40,160 @@ jobs:
         working-directory: sample-host
       - run: npm run check
 
+  # The collector library (server/): a separate package with its own lockfile. Its check
+  # verifies the generated protocol code against the spec and the zero-dependency promise
+  # on the packed tarball (server/scripts/check-package.mjs).
+  server:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: server
+    # Real services for the adapter tests; REQUIRE_SERVICES makes a missing one a failure.
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1" --health-interval 2s --health-retries 60
+      moto:
+        # SQS and DynamoDB emulator
+        image: motoserver/moto:5.2.5
+        ports:
+          - 5000:5000
+    env:
+      REQUIRE_SERVICES: '1'
+      TEST_MONGODB_URL: mongodb://localhost:27017
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_POSTGRES_URL: postgres://postgres@localhost:5432/postgres
+      TEST_MYSQL_URL: mysql://root@127.0.0.1:3306/mysql
+      TEST_AWS_ENDPOINT_URL: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Check public npm dependency age (server)
+        env:
+          NPM_RELEASE_AGE_DAYS: '3'
+        run: node ../scripts/check-npm-release-age.mjs
+      - run: npm ci
+      - run: npm run check
+
+  # The standalone collector (collector/): uses the local server package, and starts the
+  # collector as a process against every store and queue.
+  collector:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1" --health-interval 2s --health-retries 60
+      moto:
+        image: motoserver/moto:5.2.5
+        ports:
+          - 5000:5000
+    env:
+      REQUIRE_SERVICES: '1'
+      TEST_MONGODB_URL: mongodb://localhost:27017
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_POSTGRES_URL: postgres://postgres@localhost:5432/postgres
+      TEST_MYSQL_URL: mysql://root@127.0.0.1:3306/mysql
+      TEST_AWS_ENDPOINT_URL: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            collector/package-lock.json
+      - name: Check public npm dependency age (collector)
+        env:
+          NPM_RELEASE_AGE_DAYS: '3'
+        working-directory: collector
+        run: node ../scripts/check-npm-release-age.mjs
+      - name: Build the server package
+        working-directory: server
+        run: npm ci && npm run build
+      - run: npm ci
+        working-directory: collector
+      - run: npm run check
+        working-directory: collector
+
+  # The collector's Docker image: builds, runs as a non-root user, answers the smoke test,
+  # and stops cleanly on SIGTERM.
+  docker:
+    runs-on: ubuntu-latest
+    needs: [server]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: docker build -f collector/Dockerfile -t consent-analytics-collector:ci .
+      - name: Start the container
+        run: |
+          docker run -d --name collector -p 8787:8787 \
+            -e SITES_FILE=/config/sites.json \
+            -v "$PWD/collector/sites.example.json:/config/sites.json:ro" \
+            consent-analytics-collector:ci
+      - run: node collector/scripts/smoke.mjs http://localhost:8787
+      - name: Runs as a non-root user
+        run: test "$(docker exec collector id -u)" != "0"
+      - name: Stops cleanly on SIGTERM
+        run: |
+          docker stop --time 20 collector
+          docker logs collector
+          test "$(docker inspect --format '{{.State.ExitCode}}' collector)" = "0"
+          docker logs collector 2>&1 | grep -q '"msg":"collector stopped"'
+
   e2e:
     runs-on: ubuntu-latest
-    needs: check
+    needs: [check, server]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,9 +203,13 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             sample-host/package-lock.json
+            server/package-lock.json
       - run: npm ci
       - run: npm ci
         working-directory: sample-host
+      # The identity tests run the collector library inside an Express app (e2e/identity.spec.ts).
+      - run: npm ci
+        working-directory: server
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Upload Playwright report
@@ -108,3 +263,24 @@ jobs:
           path: |
             playwright-report/examples/
             test-results/
+
+  # The documentation site (docs/): a separate, private VitePress package with its own
+  # lockfile. The build fails on dead links between pages.
+  docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Check public npm dependency age (docs)
+        env:
+          NPM_RELEASE_AGE_DAYS: '3'
+        run: node ../scripts/check-npm-release-age.mjs
+      - run: npm ci
+      - run: npm run build

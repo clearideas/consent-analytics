@@ -29,6 +29,14 @@ export function generateObjectId(): string {
 }
 
 // Default configuration values (shared between frameworks)
+/** The fetch credentials mode for collector requests (invalid values mean 'omit'). */
+export function requestCredentials(
+  config: Pick<AnalyticsConfig, 'credentials'>,
+): RequestCredentials {
+  const mode = config.credentials
+  return mode === 'include' || mode === 'same-origin' ? mode : 'omit'
+}
+
 export const DEFAULT_CONFIG = {
   apiBaseUrl: '/api/',
   eventSiteName: 'app',

@@ -4,6 +4,8 @@ import { defineConfig } from '@playwright/test'
 
 const API_PORT = 18787
 const SITE_PORT = 15173
+const IDENTITY_API_PORT = 18790
+const IDENTITY_SITE_PORT = 15190
 
 // Optional: use a specific Chromium binary (e.g. where Playwright's download is not
 // possible). Never pass flags such as --disable-web-security: they remove the Origin
@@ -26,17 +28,32 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  webServer: {
-    command: 'node --disable-warning=ExperimentalWarning sample-host/src/server.ts',
-    url: `http://localhost:${API_PORT}/v1/health`,
-    reuseExistingServer: false,
-    env: {
-      PORT: String(API_PORT),
-      PLAYGROUND_PORT: String(SITE_PORT),
-      DEV_MODE: '1',
-      DATABASE_PATH: ':memory:',
+  webServer: [
+    {
+      command: 'node --disable-warning=ExperimentalWarning sample-host/src/server.ts',
+      url: `http://localhost:${API_PORT}/v1/health`,
+      reuseExistingServer: false,
+      env: {
+        PORT: String(API_PORT),
+        PLAYGROUND_PORT: String(SITE_PORT),
+        DEV_MODE: '1',
+        DATA_POLICY: 'balanced',
+        DATABASE_PATH: ':memory:',
+      },
     },
-  },
+    {
+      // The collector library inside an Express 5 API (identity tests; needs server/ installed).
+      command: 'node server/test/e2e/identity-host.ts',
+      url: `http://localhost:${IDENTITY_API_PORT}/analytics/v1/health`,
+      reuseExistingServer: false,
+      env: {
+        IDENTITY_API_PORT: String(IDENTITY_API_PORT),
+        IDENTITY_SITE_PORT: String(IDENTITY_SITE_PORT),
+      },
+    },
+  ],
 })
 
 export const E2E_API = `http://localhost:${API_PORT}`
+export const IDENTITY_API = `http://localhost:${IDENTITY_API_PORT}`
+export const IDENTITY_SITE = `http://localhost:${IDENTITY_SITE_PORT}`

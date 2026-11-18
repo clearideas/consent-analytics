@@ -40,6 +40,11 @@ export interface HostConfig {
   /** Countries where nothing may be tracked without consent (policy trackingWithoutConsent: none). */
   noTrackingWithoutConsentCountries?: Set<string>
   contextTtlSeconds: number
+  /**
+   * What the collector stores besides what the browser sends: `strict` (nothing; the default)
+   * or `balanced` (server-side enrichment by region: location, device, language, ...).
+   */
+  dataPolicy?: 'strict' | 'balanced'
   sites: SiteConfig[]
 }
 
@@ -165,6 +170,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): HostConfig {
 
   const consentCountries = list(env.CONSENT_COUNTRIES).map(c => c.toUpperCase())
 
+  const dataPolicy = (env.DATA_POLICY ?? 'strict').toLowerCase()
+  if (dataPolicy !== 'strict' && dataPolicy !== 'balanced') {
+    throw new Error('DATA_POLICY must be strict or balanced')
+  }
+
   return {
     port,
     playgroundPort,
@@ -179,6 +189,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): HostConfig {
       list(env.NO_TRACKING_WITHOUT_CONSENT_COUNTRIES).map(c => c.toUpperCase()),
     ),
     contextTtlSeconds: Number(env.CONTEXT_TTL_SECONDS ?? 3600),
+    dataPolicy,
     sites,
   }
 }

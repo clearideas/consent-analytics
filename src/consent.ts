@@ -13,7 +13,12 @@ import {
   OPTIONAL_CATEGORIES,
   UNDECIDED,
 } from './categories'
-import { generateObjectId, isAnonymousTrackable, isEssentialEvent } from './core'
+import {
+  generateObjectId,
+  isAnonymousTrackable,
+  isEssentialEvent,
+  requestCredentials,
+} from './core'
 import {
   getGeoContext,
   getLocalConsentStatus,
@@ -107,7 +112,7 @@ async function postConsentRecord(config: AnalyticsConfig, record: ConsentRecord)
       // text/plain: a CORS "simple request" (no preflight); the collector parses JSON.
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify(record),
-      credentials: 'omit',
+      credentials: requestCredentials(config),
       keepalive: true,
     })
     // 4xx other than 408/429 will never succeed; don't keep retrying those.

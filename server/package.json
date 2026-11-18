@@ -1,0 +1,128 @@
+{
+  "name": "@clearideas/consent-analytics-server",
+  "version": "0.1.0",
+  "description": "Collector server for @clearideas/consent-analytics (spec/openapi.yaml v1). Zero dependencies; bring your own database, queue and cache clients.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Clear Ideas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clearideas/consent-analytics.git",
+    "directory": "server"
+  },
+  "homepage": "https://github.com/clearideas/consent-analytics/tree/main/server#readme",
+  "bugs": {
+    "url": "https://github.com/clearideas/consent-analytics/issues"
+  },
+  "keywords": [
+    "analytics",
+    "consent",
+    "collector",
+    "gdpr",
+    "express",
+    "privacy"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/http/node.d.ts",
+      "default": "./dist/http/node.js"
+    },
+    "./fetch": {
+      "types": "./dist/http/fetch.d.ts",
+      "default": "./dist/http/fetch.js"
+    },
+    "./express": {
+      "types": "./dist/http/express.d.ts",
+      "default": "./dist/http/express.js"
+    },
+    "./mongodb": {
+      "types": "./dist/stores/mongodb.d.ts",
+      "default": "./dist/stores/mongodb.js"
+    },
+    "./postgres": {
+      "types": "./dist/stores/postgres.d.ts",
+      "default": "./dist/stores/postgres.js"
+    },
+    "./mysql": {
+      "types": "./dist/stores/mysql.d.ts",
+      "default": "./dist/stores/mysql.js"
+    },
+    "./dynamodb": {
+      "types": "./dist/stores/dynamodb.d.ts",
+      "default": "./dist/stores/dynamodb.js"
+    },
+    "./sqlite": {
+      "types": "./dist/stores/sqlite.d.ts",
+      "default": "./dist/stores/sqlite.js"
+    },
+    "./redis": {
+      "types": "./dist/redis/index.d.ts",
+      "default": "./dist/redis/index.js"
+    },
+    "./ipinfo": {
+      "types": "./dist/geo/ipinfo.d.ts",
+      "default": "./dist/geo/ipinfo.js"
+    },
+    "./sqs": {
+      "types": "./dist/queues/sqs.d.ts",
+      "default": "./dist/queues/sqs.js"
+    },
+    "./schemas/data-policy.schema.json": "./schemas/data-policy.schema.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "generate:check": "node scripts/generate.mjs --check",
+    "build": "node scripts/build.mjs",
+    "pretest": "node ../scripts/ensure-deps.mjs .",
+    "test": "vitest run",
+    "pretest:coverage": "node ../scripts/ensure-deps.mjs .",
+    "test:coverage": "vitest run --coverage",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "check:package": "node scripts/check-package.mjs",
+    "check": "npm run generate:check && npm run type-check && npm run test:coverage && npm run build && npm run check:package"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "3.1162.0",
+    "@aws-sdk/client-sqs": "3.1164.0",
+    "@aws-sdk/lib-dynamodb": "3.1162.0",
+    "@redis/client": "6.3.1",
+    "@types/express": "5.0.6",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@upstash/redis": "1.39.0",
+    "@vitest/coverage-v8": "5.1.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "cors": "2.8.6",
+    "express": "5.3.0",
+    "express4": "npm:express@4.22.3",
+    "ioredis": "6.0.0",
+    "mongodb": "7.8.0",
+    "mongoose": "9.12.1",
+    "mysql2": "3.24.5",
+    "pg": "8.23.1",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0",
+    "yaml": "2.9.1"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}

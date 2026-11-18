@@ -1,227 +1,195 @@
-// Reference implementation of spec/openapi.yaml (v1).
-import { randomUUID } from 'node:crypto'
+// The reference collector: the collector library (../../server) mounted in a Hono app, with
+// the development endpoints the playground and the end-to-end tests use.
+//
+// All collector behavior (contract, CORS, validation, rules, storage) comes from the library;
+// this file only maps the sample host's configuration onto it.
+import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { Context as HonoContext } from 'hono'
 import { Hono } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 
-import type { ConsentMode, HostConfig, SiteConfig } from './config.ts'
-import type { Geo } from './geo.ts'
-import { policyFor, resolveGeo } from './geo.ts'
-import type { FieldError, SpecValidator } from './spec.ts'
-import { createValidator } from './spec.ts'
-import type { EventStore, StoreChange } from './store.ts'
+import { toFetchHandler } from '../../server/src/http/fetch.ts'
+import type {
+  CollectorStore,
+  Geo,
+  GeoResolver,
+  MemoryStore,
+  Site,
+  SiteSource,
+  StoredConsent,
+  StoredEvent,
+} from '../../server/src/index.ts'
+import {
+  balancedDataPolicy,
+  chainGeo,
+  createCollector,
+  defineSite,
+  fixedGeo,
+  memoryStore,
+  strictDataPolicy,
+  trustedHeaderGeo,
+} from '../../server/src/index.ts'
+import { SPEC_VERSION } from '../../server/src/protocol/index.ts'
+import type { ConsentMode, HostConfig } from './config.ts'
 
-export const EVENTS_MAX_BYTES = 65_536
-export const CONSENT_MAX_BYTES = 4_096
-const SITE_KEY = /^[A-Za-z0-9._-]{3,64}$/
-const ACCEPTED_MEDIA_TYPES = new Set(['application/json', 'text/plain'])
+/** A store the development endpoints can read, reset and watch. */
+export interface DevStore extends CollectorStore {
+  listEvents(options?: { siteKey?: string; limit?: number }): Promise<StoredEvent[]>
+  listConsents(options?: { siteKey?: string; limit?: number }): Promise<StoredConsent[]>
+  clear(): void | Promise<void>
+}
+
+export type StoreChange =
+  { type: 'event'; data: DevEvent } | { type: 'consent'; data: StoredConsent } | { type: 'reset' }
+
+/** A stored event as the playground shows it (with flat consent fields, as before). */
+export type DevEvent = StoredEvent & { consentRequired: boolean; consentGranted: boolean }
+const devEvent = (event: StoredEvent): DevEvent => ({
+  ...event,
+  consentRequired: event.consent.required,
+  consentGranted: event.consent.granted,
+})
 
 export interface AppOptions {
   config: HostConfig
-  store: EventStore
-  validator?: SpecValidator
+  /** Default: in memory. */
+  store?: DevStore
+  /** Shown by /_dev/state, e.g. "SQLite (./data/analytics.db)". Default "memory". */
+  storeLabel?: string
   now?: () => Date
 }
 
-export function createApp(options: AppOptions) {
-  const { config, store } = options
-  const validator = options.validator ?? createValidator()
-  const now = options.now ?? (() => new Date())
-  const sites = new Map(config.sites.map(site => [site.siteKey, { ...site }]))
-  let geoOverride: Geo | null = null
-
-  const anySiteAllows = (origin: string | undefined) =>
-    !!origin && [...sites.values()].some(site => site.allowedOrigins.includes(origin))
-
-  const problem = (
-    c: HonoContext,
-    status: 400 | 403 | 404 | 413 | 415 | 429,
-    title: string,
-    detail?: string,
-    errors?: FieldError[],
-  ) =>
-    c.body(
-      JSON.stringify({
-        type: 'about:blank',
-        title,
-        status,
-        ...(detail ? { detail } : {}),
-        ...(errors?.length ? { errors } : {}),
-      }),
-      status,
-      { 'Content-Type': 'application/problem+json' },
-    )
-
-  const app = new Hono()
-
-  // CORS: echo allowed origins on every response (errors included) so browsers can read
-  // them. Never allow credentials. Preflights are answered for any site's origins.
-  app.use('*', async (c, next) => {
-    const origin = c.req.header('Origin')
-    if (c.req.method === 'OPTIONS') {
-      if (!anySiteAllows(origin)) return problem(c, 403, 'Origin not allowed')
-      return c.body(null, 204, {
-        'Access-Control-Allow-Origin': origin!,
-        'Access-Control-Allow-Methods': 'GET, POST',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Max-Age': '86400',
-        Vary: 'Origin',
-      })
-    }
-    await next()
-    c.res.headers.append('Vary', 'Origin')
-    if (anySiteAllows(origin)) c.res.headers.set('Access-Control-Allow-Origin', origin!)
+const version = (packageJson: string) => {
+  try {
+    return (JSON.parse(readFileSync(packageJson, 'utf8')) as { version?: string }).version
+  } catch {
     return undefined
-  })
+  }
+}
+const root = join(import.meta.dirname, '..', '..')
+const VERSIONS = {
+  library: version(join(root, 'package.json')),
+  server: version(join(root, 'server', 'package.json')),
+  spec: SPEC_VERSION,
+}
 
-  // Shared POST handling: media type, JSON, site, origin, schema.
-  const readPost = async (
-    c: HonoContext,
-    schema: 'EventBatch' | 'ConsentRecordRequest',
-  ): Promise<{ body: any; site: SiteConfig; origin: string } | Response> => {
-    const mediaType = (c.req.header('Content-Type') ?? '').split(';')[0]!.trim().toLowerCase()
-    if (!ACCEPTED_MEDIA_TYPES.has(mediaType)) {
-      return problem(c, 415, 'Unsupported media type', 'Send application/json or text/plain.')
-    }
+export function createApp(options: AppOptions) {
+  const { config } = options
+  const inner: DevStore = options.store ?? (memoryStore() as MemoryStore)
+  const changes = new EventEmitter()
 
-    let body: any
-    try {
-      body = JSON.parse(await c.req.text())
-    } catch {
-      return problem(c, 400, 'Malformed JSON')
-    }
-
-    const siteKey = body?.siteKey
-    if (typeof siteKey !== 'string' || !SITE_KEY.test(siteKey)) {
-      return problem(c, 400, 'Invalid request', undefined, [
-        { path: '/siteKey', message: 'must be a valid site key' },
-      ])
-    }
-    const site = sites.get(siteKey)
-    if (!site) return problem(c, 404, 'Unknown site key')
-
-    const origin = c.req.header('Origin')
-    if (!origin || !site.allowedOrigins.includes(origin)) {
-      return problem(
-        c,
-        403,
-        'Origin not allowed',
-        `Origin ${origin ?? '(none)'} is not allowed for this site.`,
-      )
-    }
-
-    const errors = validator.validate(schema, body)
-    if (errors.length) return problem(c, 400, 'Invalid request', undefined, errors)
-
-    return { body, site, origin }
+  // Report what was stored to the live stream (/_dev/stream).
+  const store: DevStore = {
+    ...inner,
+    async insertEvents(events) {
+      const result = await inner.insertEvents(events)
+      for (const event of events)
+        changes.emit('change', { type: 'event', data: devEvent(event) } satisfies StoreChange)
+      return result
+    },
+    async insertConsent(record) {
+      const result = await inner.insertConsent(record)
+      if (!result.duplicate)
+        changes.emit('change', { type: 'consent', data: record } satisfies StoreChange)
+      return result
+    },
+    listEvents: options => inner.listEvents(options),
+    listConsents: options => inner.listConsents(options),
+    clear: () => inner.clear(),
   }
 
-  const tooLarge = (c: HonoContext) => problem(c, 413, 'Payload too large')
+  // Sites: changeable by /_dev/policy.
+  const sites = new Map<string, Site>(config.sites.map(site => [site.siteKey, defineSite(site)]))
+  const anySiteAllows = (origin: string) =>
+    [...sites.values()].some(site => site.allowedOrigins.includes(origin))
+  const siteSource: SiteSource = {
+    getSite: siteKey => sites.get(siteKey) ?? null,
+    isOriginAllowed: anySiteAllows,
+  }
 
-  app.get('/v1/health', c => c.json({ status: 'ok' }))
+  // Geo: the development override, then trusted CDN headers, then the default country.
+  let geoOverride: Geo | null = null
+  const resolvers: GeoResolver[] = [() => geoOverride]
+  resolvers.push(
+    trustedHeaderGeo(config.trustedGeoHeaders, {
+      // e.g. cf-ipcontinent: read as the continent, never as a country
+      continentHeaders: config.trustedGeoHeaders.filter(h => h.includes('continent')),
+    }),
+  )
+  if (config.defaultCountry) resolvers.push(fixedGeo({ country: config.defaultCountry }))
 
-  app.get('/v1/context', c => {
-    const siteKey = c.req.query('siteKey')
-    if (!siteKey || !SITE_KEY.test(siteKey)) {
-      return problem(c, 400, 'Invalid request', undefined, [
-        { path: 'siteKey', message: 'query parameter must be a valid site key' },
-      ])
-    }
-    const site = sites.get(siteKey)
-    if (!site) return problem(c, 404, 'Unknown site key')
+  const collector = createCollector({
+    sites: siteSource,
+    store,
+    geo: chainGeo(...resolvers),
+    // By default the reference collector stores what the browser sends, nothing more
+    // (strict); `balanced` adds the server-side enrichment (for the playground's analytics).
+    dataPolicy: (config.dataPolicy === 'balanced' ? balancedDataPolicy : strictDataPolicy)({
+      consentCountries: [...config.consentCountries],
+      ...(config.noTrackingWithoutConsentCountries?.size
+        ? { noTrackingWithoutConsentCountries: [...config.noTrackingWithoutConsentCountries] }
+        : {}),
+    }),
+    contextTtlSeconds: config.contextTtlSeconds,
+    ...(options.now ? { clock: options.now } : {}),
+    logger: false,
+  })
+  // The client IP is the socket address when served by @hono/node-server (the sample host is
+  // not meant to run behind a proxy). The data policy decides whether it is stored.
+  const clientIps = new WeakMap<Request, string>()
+  const handle = toFetchHandler(collector, { getClientIp: request => clientIps.get(request) })
 
-    const origin = c.req.header('Origin')
-    if (origin && !site.allowedOrigins.includes(origin)) {
-      return problem(c, 403, 'Origin not allowed')
-    }
+  const app = new Hono()
+  app.all('/v1/*', c => {
+    const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+    const ip = env?.incoming?.socket?.remoteAddress
+    if (ip) clientIps.set(c.req.raw, ip)
+    return handle(c.req.raw)
+  })
 
-    const geo = resolveGeo(c.req.raw.headers, config, geoOverride)
-    const policy = policyFor(site, geo, config)
-    c.header('Cache-Control', 'private, no-store')
-    return c.json({
-      v: 1,
-      siteKey,
-      policy,
-      ...(geo.country ? { geo } : {}),
-      ttlSeconds: config.contextTtlSeconds,
+  const problem = (c: HonoContext, status: 403 | 404, title: string) =>
+    c.body(JSON.stringify({ type: 'about:blank', title, status }), status, {
+      'Content-Type': 'application/problem+json',
     })
-  })
-
-  app.post('/v1/events', bodyLimit({ maxSize: EVENTS_MAX_BYTES, onError: tooLarge }), async c => {
-    const request = await readPost(c, 'EventBatch')
-    if (request instanceof Response) return request
-    const { body, site, origin } = request
-
-    const receivedAt = now().toISOString()
-    let accepted = 0
-    let duplicates = 0
-    const rejected: Array<{ index: number; eventId?: string; errors: FieldError[] }> = []
-
-    body.events.forEach((event: any, index: number) => {
-      const errors = validator.validate('Event', event)
-      if (errors.length) {
-        rejected.push({
-          index,
-          ...(typeof event?.eventId === 'string' ? { eventId: event.eventId.slice(0, 64) } : {}),
-          errors,
-        })
-        return
-      }
-      const inserted = store.insertEvent({
-        siteKey: site.siteKey,
-        eventId: event.eventId,
-        name: event.name,
-        occurredAt: event.occurredAt,
-        sentAt: body.sentAt,
-        receivedAt,
-        sessionId: event.sessionId,
-        pageViewId: event.pageViewId ?? null,
-        trackingCategory: event.trackingCategory,
-        consentRequired: event.consent.required,
-        consentGranted: event.consent.granted,
-        props: event.props,
-        origin,
-      })
-      if (inserted) accepted++
-      else duplicates++
-    })
-
-    return c.json({ accepted, duplicates, rejected }, 202)
-  })
-
-  app.post('/v1/consent', bodyLimit({ maxSize: CONSENT_MAX_BYTES, onError: tooLarge }), async c => {
-    const request = await readPost(c, 'ConsentRecordRequest')
-    if (request instanceof Response) return request
-    const { body, site, origin } = request
-
-    const record = {
-      recordId: randomUUID(),
-      siteKey: site.siteKey,
-      consentId: body.consentId,
-      decision: body.decision,
-      categories: body.categories ?? null,
-      policyVersion: body.policyVersion,
-      decidedAt: body.decidedAt,
-      recordedAt: now().toISOString(),
-      source: body.source,
-      origin,
-    }
-    store.insertConsent(record)
-    return c.json(
-      { recordId: record.recordId, consentId: record.consentId, recordedAt: record.recordedAt },
-      201,
-    )
-  })
 
   if (config.devMode) {
+    // The playground (another origin) calls these: CORS for the configured sites' origins.
+    app.use('/_dev/*', async (c, next) => {
+      const origin = c.req.header('Origin')
+      const allowed = origin !== undefined && anySiteAllows(origin)
+      if (c.req.method === 'OPTIONS') {
+        if (!allowed) return problem(c, 403, 'Origin not allowed')
+        return c.body(null, 204, {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, POST',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Max-Age': '86400',
+          Vary: 'Origin',
+        })
+      }
+      await next()
+      c.res.headers.append('Vary', 'Origin')
+      if (allowed) c.res.headers.set('Access-Control-Allow-Origin', origin)
+      return undefined
+    })
     // Development-only endpoints for the playground and end-to-end tests.
     // Not part of the contract. Never enable DEV_MODE in production.
-    app.get('/_dev/events', c =>
-      c.json(store.listEvents(c.req.query('siteKey'), Number(c.req.query('limit') ?? 500))),
+    app.get('/_dev/events', async c =>
+      c.json(
+        (
+          await store.listEvents({
+            siteKey: c.req.query('siteKey'),
+            limit: Number(c.req.query('limit') ?? 500),
+          })
+        ).map(devEvent),
+      ),
     )
-    app.get('/_dev/consents', c => c.json(store.listConsents(c.req.query('siteKey'))))
+    app.get('/_dev/consents', async c =>
+      c.json(await store.listConsents({ siteKey: c.req.query('siteKey') })),
+    )
     app.get('/_dev/state', c =>
       c.json({
         geoOverride,
@@ -235,10 +203,26 @@ export function createApp(options: AppOptions) {
         ),
       }),
     )
+    // What this collector is and how it is configured (the playground's environment card).
+    app.get('/_dev/info', c =>
+      c.json({
+        versions: VERSIONS,
+        dataPolicy: config.dataPolicy ?? 'strict',
+        store: options.storeLabel ?? 'memory',
+        trustedGeoHeaders: config.trustedGeoHeaders,
+        defaultCountry: config.defaultCountry ?? null,
+        consentCountries: [...config.consentCountries],
+        noTrackingWithoutConsentCountries: [...(config.noTrackingWithoutConsentCountries ?? [])],
+        contextTtlSeconds: config.contextTtlSeconds,
+      }),
+    )
     app.post('/_dev/geo', async c => {
       const body = (await c.req.json().catch(() => ({}))) as Geo
       geoOverride = body.country
-        ? { country: body.country.toUpperCase(), continent: body.continent }
+        ? {
+            country: body.country.toUpperCase(),
+            ...(body.continent ? { continent: body.continent } : {}),
+          }
         : null
       return c.json({ geoOverride })
     })
@@ -251,23 +235,28 @@ export function createApp(options: AppOptions) {
       }
       const site = sites.get(body.siteKey ?? '')
       if (!site) return problem(c, 404, 'Unknown site key')
-      if (body.policyVersion) site.policyVersion = String(body.policyVersion)
-      if (body.consentMode && ['geo', 'always', 'never'].includes(body.consentMode)) {
-        site.consentMode = body.consentMode
-      }
-      if (body.trackingWithoutConsent === 'limited' || body.trackingWithoutConsent === 'none') {
-        site.trackingWithoutConsent = body.trackingWithoutConsent
-      }
+      const updated = defineSite({
+        ...site,
+        ...(body.policyVersion ? { policyVersion: String(body.policyVersion) } : {}),
+        ...(body.consentMode && ['geo', 'always', 'never'].includes(body.consentMode)
+          ? { consentMode: body.consentMode }
+          : {}),
+        ...(body.trackingWithoutConsent === 'limited' || body.trackingWithoutConsent === 'none'
+          ? { trackingWithoutConsent: body.trackingWithoutConsent }
+          : {}),
+      })
+      sites.set(updated.siteKey, updated)
       return c.json({
-        siteKey: site.siteKey,
-        policyVersion: site.policyVersion,
-        consentMode: site.consentMode,
+        siteKey: updated.siteKey,
+        policyVersion: updated.policyVersion,
+        consentMode: updated.consentMode,
       })
     })
-    app.post('/_dev/reset', c => {
-      store.reset()
+    app.post('/_dev/reset', async c => {
+      await store.clear()
       geoOverride = null
-      for (const original of config.sites) sites.set(original.siteKey, { ...original })
+      for (const original of config.sites) sites.set(original.siteKey, defineSite(original))
+      changes.emit('change', { type: 'reset' } satisfies StoreChange)
       return c.json({ ok: true })
     })
     app.get('/_dev/stream', c =>
@@ -278,9 +267,9 @@ export function createApp(options: AppOptions) {
             data: JSON.stringify('data' in change ? change.data : {}),
           })
         }
-        store.changes.on('change', onChange)
+        changes.on('change', onChange)
         stream.onAbort(() => {
-          store.changes.off('change', onChange)
+          changes.off('change', onChange)
         })
         await stream.writeSSE({ event: 'ready', data: '{}' })
         while (!stream.aborted) {
@@ -293,5 +282,5 @@ export function createApp(options: AppOptions) {
 
   app.notFound(c => problem(c, 404, 'Not found'))
 
-  return { app, store }
+  return { app, store, collector }
 }

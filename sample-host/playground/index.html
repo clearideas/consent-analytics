@@ -1,110 +1,102 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Analytics Playground</title>
-    <link rel="stylesheet" href="/assets/style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Explore @clearideas/consent-analytics: a live demo website, scripted visitor journeys with checks, and the analytics they produce."
+    />
+    <title>Consent Analytics Playground</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16x16.png" />
+    <link rel="stylesheet" href="/assets/playground.css" />
   </head>
   <body>
-    <header class="top">
-      <div>
-        <h1>Analytics Playground</h1>
-        <p class="sub">
-          A fake website running <code>@clearideas/consent-analytics</code> against the sample collector.
-          Everything on the right is what actually left the browser.
-        </p>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <img src="/assets/clearideas-logo.svg" alt="Clear Ideas" />
+          <span>Consent Analytics</span>
+        </a>
+        <nav class="site-nav" aria-label="Playground">
+          <a href="/">Overview</a>
+          <a href="/live">Live</a>
+          <a href="/scenarios">Scenarios</a>
+          <a href="/analytics">Analytics</a>
+        </nav>
+        <span class="spacer"></span>
+        <span id="collector-chip" class="chip"><i></i>Collector…</span>
       </div>
-      <div id="status" class="status" aria-live="polite"></div>
     </header>
 
-    <main class="grid">
-      <section class="panel site" aria-label="Demo website">
-        <nav class="site-nav" aria-label="Demo site navigation">
-          <a href="/" data-nav>Home</a>
-          <a href="/pricing" data-nav>Pricing</a>
-          <a href="/docs" data-nav>Docs</a>
-          <a href="https://example.org/" target="_blank" rel="noopener" data-testid="outbound">example.org ↗</a>
-        </nav>
-        <div id="page" class="page"></div>
-
-        <div class="reset" role="group" aria-label="Reset">
-          <span class="label">Reset</span>
-          <button id="reset-consent" title="Forget this visitor's consent decision; the banner appears again">Reset consent</button>
-          <button id="reset-visitor" title="Clear all ci_* storage and cookies in this browser (a brand-new visitor)">Reset visitor</button>
-          <button id="reset-all" class="danger" title="Reset visitor, clear server data and the region override">Reset everything</button>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <h1>Explore Consent Analytics</h1>
+          <p>
+            A demo website runs <code>@clearideas/consent-analytics</code> against a real collector
+            built on the server library. Act as a visitor from any region, run scripted journeys
+            that check every layer, and see what was collected.
+          </p>
         </div>
-
-        <h2>1. Visitor</h2>
-        <div class="row" role="group" aria-label="Visitor region">
-          <span class="label">Region</span>
-          <button data-region="DE" data-continent="EU">Germany</button>
-          <button data-region="GB" data-continent="EU">United Kingdom</button>
-          <button data-region="US" data-continent="NA">United States</button>
-          <button data-region="">Unknown</button>
-        </div>
-        <div class="row">
-          <label class="toggle"><input type="checkbox" id="gpc" /> Browser sends Global Privacy Control</label>
-        </div>
-
-        <h2>Consent settings</h2>
-        <div class="row">
-          <label class="toggle"><input type="checkbox" id="categories-mode" /> Consent choices per category (Customize)</label>
-        </div>
-        <div class="row">
-          <label class="toggle"><input type="checkbox" id="no-tracking-without-consent" /> Nothing tracked without consent (collector policy)</label>
-        </div>
-        <div class="row">
-          <span class="label">Arrive</span>
-          <button id="from-ads">From a Google Ads click</button>
-          <button id="from-reset-link">Via a password-reset link</button>
-        </div>
-
-        <h2>2. Interact</h2>
-        <div class="row">
-          <button id="ev-signup">Track sign_up</button>
-          <button id="ev-purchase">Track purchase ($99)</button>
-          <button id="ev-custom">Track "Newsletter Signup"</button>
-          <button id="ev-error">Track error</button>
-        </div>
-        <div class="row">
-          <button id="manage-cookies">Cookie settings</button>
-          <button id="leave-page">Simulate leaving the page</button>
-          <button id="flush">Flush queue</button>
-        </div>
-
-        <h2>3. Operate</h2>
-        <div class="row">
-          <button id="new-policy">Publish new policy version</button>
-          <button id="reset-server">Clear server data</button>
-        </div>
-        <p class="hint" id="reset-note" aria-live="polite"></p>
-        <p class="hint">
-          Tip: switching to another browser tab also sends <code>page_exit</code>, exactly like a real visitor.
-        </p>
-        <p class="hint">
-          More demos: <a href="/plain/first">a plain site with only the script tag</a> ·
-          <a href="/tools/">third-party tools</a> (directory plugins, consent-gated scripts, a footer
-          "Cookie settings" link, under a strict Content Security Policy).
-        </p>
+        <section class="card" aria-label="Collector">
+          <div id="environment" class="env-list"><p class="empty">Asking the collector…</p></div>
+        </section>
       </section>
 
-      <section class="panel" aria-label="What left the browser">
-        <div class="tabs" role="tablist">
-          <button role="tab" data-tab="events" aria-selected="true">Collector: events <span id="count-events" class="pill">0</span></button>
-          <button role="tab" data-tab="consents" aria-selected="false">Collector: consent records <span id="count-consents" class="pill">0</span></button>
-          <button role="tab" data-tab="gtag" aria-selected="false">Google (gtag) <span id="count-gtag" class="pill">0</span></button>
-          <button role="tab" data-tab="storage" aria-selected="false">Browser storage</button>
-        </div>
-        <label class="filter"><input type="checkbox" id="hide-noise" checked /> Hide <code>web_vital</code> and <code>auto_metrics</code></label>
-        <ol id="tab-events" class="feed" data-testid="events"></ol>
-        <ol id="tab-consents" class="feed" hidden data-testid="consents"></ol>
-        <ol id="tab-gtag" class="feed" hidden data-testid="gtag"></ol>
-        <div id="tab-storage" class="storage" hidden data-testid="storage"></div>
+      <section id="gallery" class="gallery" aria-label="Playground pages"></section>
+
+      <h2 class="gallery-heading">What to look for</h2>
+      <section class="principles" aria-label="Principles">
+        <article class="card principle">
+          <strong>Unknown region, consent required</strong>
+          <p>
+            The collector decides where consent is needed. If it can't tell where a visitor is, the
+            answer is "required".
+          </p>
+        </article>
+        <article class="card principle">
+          <strong>Limited means anonymous</strong>
+          <p>
+            Before consent, only essential events leave the browser: no attribution, no query
+            strings, no identifiers.
+          </p>
+        </article>
+        <article class="card principle">
+          <strong>Records are evidence</strong>
+          <p>
+            Every decision is an append-only consent record with its policy version. Withdrawal is a
+            new record, not an edit.
+          </p>
+        </article>
+        <article class="card principle">
+          <strong>Third parties wait their turn</strong>
+          <p>Vendor tags load and receive events only once the visitor allows their category.</p>
+        </article>
       </section>
+
+      <h2 class="gallery-heading">More demo sites</h2>
+      <section id="more" class="gallery" aria-label="More demo sites"></section>
     </main>
+    <footer class="site-footer" aria-label="Project information">
+      <div class="site-footer-inner">
+        <p>© 2026 <a href="https://clearideas.com/">Clear Ideas Incorporated</a></p>
+        <nav aria-label="Project links">
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/LICENSE"
+            >MIT License</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/spec/openapi.yaml"
+            >Collector API (spec)</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics">GitHub</a>
+        </nav>
+      </div>
+    </footer>
 
     <script src="/playground-config.js"></script>
-    <script type="module" src="/assets/app.js"></script>
+    <script src="/assets/gallery.js" type="module"></script>
   </body>
 </html>

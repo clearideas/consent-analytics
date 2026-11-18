@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.ts",
-    "dev": "DEV_MODE=1 node --disable-warning=ExperimentalWarning --watch src/server.ts"
+    "dev": "DEV_MODE=1 DATA_POLICY=balanced node --disable-warning=ExperimentalWarning --watch src/server.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",
