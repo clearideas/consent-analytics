@@ -309,43 +309,31 @@ export async function everythingSent(
   return JSON.stringify({ requests: api.requests, gtag: gtagCalls })
 }
 
-/**
- * Route the client's fetch and sendBeacon into the real reference collector
- * (sample-host), running in-process with an in-memory database. The page origin
- * (https://www.example.test) is sent as Origin, as a browser would.
- */
-export async function hostApi(
-  options: {
-    country?: string
-    consentMode?: 'geo' | 'always' | 'never'
-    policyVersion?: string
-  } = {},
-) {
-  const { createApp } = await import('../sample-host/src/app.ts')
-  const { DEFAULT_CONSENT_COUNTRIES } = await import('../sample-host/src/config.ts')
-  const { MemoryStore } = await import('../sample-host/src/memory-store.ts')
-  const origin = window.location.origin
-  const site = {
-    siteKey: 'test-site',
-    allowedOrigins: [origin],
-    policyVersion: options.policyVersion ?? '1',
-    consentMode: options.consentMode ?? ('geo' as const),
-  }
-  const { app, store } = createApp({
-    config: {
-      port: 0,
-      playgroundPort: 0,
-      devMode: false,
-      databasePath: ':memory:',
-      trustedGeoHeaders: [],
-      defaultCountry: options.country,
-      consentCountries: new Set(DEFAULT_CONSENT_COUNTRIES),
-      contextTtlSeconds: 3600,
-      sites: [site],
-    },
-    store: new MemoryStore(),
-  })
+export interface HostOptions {
+  country?: string
+  consentMode?: 'geo' | 'always' | 'never'
+  policyVersion?: string
+}
 
+/** A stored event, as the client-host tests read it (the reference collector's shape). */
+export interface HostEvent {
+  siteKey: string
+  eventId: string
+  name: string
+  trackingCategory: 'full' | 'limited'
+  consentRequired: boolean
+  consentGranted: boolean
+  props: Record<string, any>
+  origin: string | null
+  [key: string]: unknown
+}
+
+/**
+ * Route the client's fetch and sendBeacon into a collector's fetch handler, in-process.
+ * The page origin (https://www.example.test) is sent as Origin, as a browser would.
+ */
+function connectBrowser(handle: (request: Request) => Promise<Response>) {
+  const origin = window.location.origin
   const responses: Array<{ method: string; path: string; status: number; body: any }> = []
   const pending: Promise<unknown>[] = []
 
@@ -365,7 +353,7 @@ export async function hostApi(
       wireHeaders.set('Content-Length', String(new TextEncoder().encode(init.body).length))
     }
     Object.defineProperty(request, 'headers', { value: wireHeaders })
-    const response = await app.fetch(request)
+    const response = await handle(request)
     const text = await response.clone().text()
     responses.push({
       method: init.method ?? 'GET',
@@ -392,8 +380,6 @@ export async function hostApi(
   })
 
   return {
-    store,
-    site,
     responses,
     /** Wait until every beacon has been processed by the host. */
     async settled() {
@@ -401,6 +387,93 @@ export async function hostApi(
       await Promise.all(pending)
     },
   }
+}
+
+function testSite(options: HostOptions) {
+  return {
+    siteKey: 'test-site',
+    allowedOrigins: [window.location.origin],
+    policyVersion: options.policyVersion ?? '1',
+    consentMode: options.consentMode ?? ('geo' as const),
+  }
+}
+
+/**
+ * Wrap the library's memory store so tests can read what was stored synchronously, in the
+ * shape the client-host tests use (flat consentRequired/consentGranted).
+ */
+async function recordingStore() {
+  const server = await import('../server/src/index.ts')
+  const inner = server.memoryStore()
+  let events: HostEvent[] = []
+  let consents: Array<Record<string, any>> = []
+  const store = {
+    ...inner,
+    async insertEvents(batch: Parameters<typeof inner.insertEvents>[0]) {
+      const result = await inner.insertEvents(batch)
+      events = (await inner.listEvents({ limit: 100_000 })).map(({ consent, ...event }) => ({
+        ...event,
+        consentRequired: consent.required,
+        consentGranted: consent.granted,
+      }))
+      return result
+    },
+    async insertConsent(record: Parameters<typeof inner.insertConsent>[0]) {
+      const result = await inner.insertConsent(record)
+      consents = await inner.listConsents({ limit: 100_000 })
+      return result
+    },
+  }
+  const view = {
+    listEvents: (siteKey?: string) => events.filter(e => !siteKey || e.siteKey === siteKey),
+    listConsents: (siteKey?: string) => consents.filter(c => !siteKey || c.siteKey === siteKey),
+  }
+  return { store, view }
+}
+
+/**
+ * The browser client against the reference collector (sample-host: the library mounted in
+ * a Hono app with the strict data policy), in-process with an in-memory store.
+ */
+export async function hostApi(options: HostOptions = {}) {
+  const { createApp } = await import('../sample-host/src/app.ts')
+  const { DEFAULT_CONSENT_COUNTRIES } = await import('../sample-host/src/config.ts')
+  const site = testSite(options)
+  const { store, view } = await recordingStore()
+  const { app } = createApp({
+    config: {
+      port: 0,
+      playgroundPort: 0,
+      devMode: false,
+      databasePath: ':memory:',
+      trustedGeoHeaders: [],
+      defaultCountry: options.country,
+      consentCountries: new Set(DEFAULT_CONSENT_COUNTRIES),
+      contextTtlSeconds: 3600,
+      sites: [site],
+    },
+    store,
+  })
+  return { store: view, site, ...connectBrowser(request => Promise.resolve(app.fetch(request))) }
+}
+
+/**
+ * The browser client against the collector library (server/) with its defaults, through its
+ * fetch handler and in-memory store. Same store view as hostApi(), so the same tests run
+ * against both.
+ */
+export async function serverApi(options: HostOptions = {}) {
+  const server = await import('../server/src/index.ts')
+  const { toFetchHandler } = await import('../server/src/http/fetch.ts')
+  const site = testSite(options)
+  const { store, view } = await recordingStore()
+  const collector = server.createCollector({
+    sites: [site],
+    store,
+    geo: options.country ? server.fixedGeo({ country: options.country }) : undefined,
+    logger: false,
+  })
+  return { store: view, site, ...connectBrowser(toFetchHandler(collector)) }
 }
 
 /** Simulate a browser sending the Global Privacy Control signal. */

@@ -1,13 +1,19 @@
 # Release process
 
-This repository publishes an MIT-licensed npm package. Application deployments and CDN hosting belong to the consuming application or infrastructure project.
+The browser library, server library and standalone collector are independently versioned MIT-licensed npm packages.
 
 ## Prepare a release
 
-1. Use Node.js 24, install dependencies with `npm ci`, and run `npm run check`.
-2. Update `package.json` and `package-lock.json` to the intended version, review the diff, and commit the release source.
-3. Inspect the release contents with `npm pack --dry-run --ignore-scripts`. The package check also inspects an actual tarball and exercises its ESM and CommonJS entries.
-4. Tag the reviewed commit as `v` followed by exactly the package version and create a GitHub release from that tag. Do not include old private branches or tags in a new public repository.
+| Package | Directory | Release tag |
+| --- | --- | --- |
+| `@clearideas/consent-analytics` | repository root | `v<version>` |
+| `@clearideas/consent-analytics-server` | `server/` | `server-v<version>` |
+| `@clearideas/consent-analytics-collector` | `collector/` | `collector-v<version>` |
+
+1. Use Node.js 24 and run the release checks for the package you are publishing. The browser checks use the sample host dependencies. The server and collector test matrix requires real service adapters, as configured in CI.
+2. Update that package's `package.json` and `package-lock.json` to the intended version. Review the diff and commit the release source.
+3. Build the package and inspect the contents with `npm pack --dry-run --ignore-scripts`.
+4. Create the GitHub release from the reviewed commit with the matching tag shown above. Publish the server version before publishing a collector that depends on it.
 
 ## npm publication
 
@@ -17,7 +23,10 @@ Manual publication is `npm publish --access public`; `prepublishOnly` runs the c
 
 ## Application and CDN deployment
 
-Consumers can install a pinned public npm version or serve selected built files from their own hosting. This repository does not hold AWS roles, buckets, CloudFront distribution settings, deployment credentials, or production upload scripts. Deploy the released package artifact from the private application/infrastructure project that owns those endpoints. Publishing to npm does not deploy or invalidate a CDN.
+Consumers can install a pinned public npm version or serve built browser files from
+their own hosting. The documentation site at
+[content-analytics.clearideas.com](https://content-analytics.clearideas.com/) is
+deployed separately from `main`. See the [documentation deployment notes](docs/README.md#deployment).
 
 ## First public release
 

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Charts of what the collector stored: consent, tracking categories, pages, acquisition, web vitals and more."
+    />
+    <title>Analytics · Consent Analytics Playground</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16x16.png" />
+    <link rel="stylesheet" href="/assets/playground.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <img src="/assets/clearideas-logo.svg" alt="Clear Ideas" />
+          <span>Consent Analytics</span>
+        </a>
+        <nav class="site-nav" aria-label="Playground">
+          <a href="/">Overview</a>
+          <a href="/live">Live</a>
+          <a href="/scenarios">Scenarios</a>
+          <a href="/analytics">Analytics</a>
+        </nav>
+        <span class="spacer"></span>
+        <span id="collector-chip" class="chip"><i></i>Collector…</span>
+        <button id="simulate" class="button primary" type="button" data-state="idle">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="simulate-label">Simulate visitors</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="demo-intro">
+        <h1>Analytics</h1>
+        <p>
+          Everything the collector stored for the demo website, as charts. The data comes from real
+          visits: yours in the live playground, the scenarios, or simulated visitors, who are
+          scripted browsers on the demo website, from several regions, making different choices.
+        </p>
+      </section>
+
+      <div class="toolbar">
+        <div class="field">
+          <span>Show</span>
+          <div
+            id="category-filter"
+            class="segmented"
+            role="radiogroup"
+            aria-label="Tracking category"
+          >
+            <label><input type="radio" name="category" value="all" checked /> All events</label>
+            <label><input type="radio" name="category" value="full" /> Full</label>
+            <label><input type="radio" name="category" value="limited" /> Limited</label>
+          </div>
+        </div>
+        <div class="field">
+          <span>Simulated visitors</span>
+          <div
+            id="visitor-count"
+            class="segmented"
+            role="radiogroup"
+            aria-label="Simulated visitors"
+          >
+            <label><input type="radio" name="visitors" value="8" /> 8</label>
+            <label><input type="radio" name="visitors" value="16" checked /> 16</label>
+            <label><input type="radio" name="visitors" value="32" /> 32</label>
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <button id="clear-data" class="button small danger" type="button">
+          Clear collected data
+        </button>
+      </div>
+      <div id="simulation" class="card" hidden>
+        <div class="card-body">
+          <div class="toolbar">
+            <strong id="simulation-title">Simulating visitors</strong
+            ><span id="simulation-detail" class="muted"></span>
+          </div>
+          <div class="progress"><i id="simulation-progress"></i></div>
+          <div id="sim-browser" style="margin-top: 14px"></div>
+        </div>
+      </div>
+
+      <dl id="kpis" class="stats" style="margin-top: 16px" aria-label="Key figures"></dl>
+      <div id="dashboard" class="dash-grid"></div>
+    </main>
+    <footer class="site-footer" aria-label="Project information">
+      <div class="site-footer-inner">
+        <p>© 2026 <a href="https://clearideas.com/">Clear Ideas Incorporated</a></p>
+        <nav aria-label="Project links">
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/LICENSE"
+            >MIT License</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/spec/openapi.yaml"
+            >Collector API (spec)</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics">GitHub</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="/playground-config.js"></script>
+    <script src="/assets/analytics-page.js" type="module"></script>
+  </body>
+</html>

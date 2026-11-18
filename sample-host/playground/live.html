@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Act as a visitor on a demo website and watch what leaves the browser and what the collector stores."
+    />
+    <title>Live · Consent Analytics Playground</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16x16.png" />
+    <link rel="stylesheet" href="/assets/playground.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <img src="/assets/clearideas-logo.svg" alt="Clear Ideas" />
+          <span>Consent Analytics</span>
+        </a>
+        <nav class="site-nav" aria-label="Playground">
+          <a href="/">Overview</a>
+          <a href="/live">Live</a>
+          <a href="/scenarios">Scenarios</a>
+          <a href="/analytics">Analytics</a>
+        </nav>
+        <span class="spacer"></span>
+        <span id="collector-chip" class="chip"><i></i>Collector…</span>
+        <button
+          id="reset-all"
+          class="button danger"
+          type="button"
+          title="Clear the collector's data, the region and the visitor"
+        >
+          Reset everything
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="demo-intro">
+        <h1>Live playground</h1>
+        <p>
+          The frame is a visitor's browser on the demo website. Choose where the visitor is, act on
+          the site, and follow every request from the browser to the collector and into storage.
+        </p>
+      </section>
+      <p id="reset-note" class="notice" role="status" hidden></p>
+
+      <div class="live-grid">
+        <aside class="card controls" aria-label="Visitor">
+          <div class="field">
+            <span>Visitor's region</span>
+            <div id="regions" class="segmented" role="group" aria-label="Visitor's region">
+              <button type="button" data-region="DE" data-continent="EU" aria-pressed="false">
+                Germany
+              </button>
+              <button type="button" data-region="GB" data-continent="EU" aria-pressed="false">
+                UK
+              </button>
+              <button type="button" data-region="US" data-continent="NA" aria-pressed="false">
+                US
+              </button>
+              <button type="button" data-region="JP" data-continent="AS" aria-pressed="false">
+                Japan
+              </button>
+              <button type="button" data-region="" aria-pressed="false">Unknown</button>
+            </div>
+            <small>Set on the collector (a development override of its geo lookup).</small>
+          </div>
+
+          <label class="toggle">
+            <input type="checkbox" id="gpc" />
+            <span
+              ><strong>Global Privacy Control</strong
+              ><small>The browser asks sites not to sell or share data.</small></span
+            >
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="categories-mode" />
+            <span
+              ><strong>Choices per category</strong
+              ><small>The banner offers "Customize".</small></span
+            >
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="no-tracking-without-consent" />
+            <span
+              ><strong>Nothing without consent</strong
+              ><small>Collector policy: no tracking at all before a decision.</small></span
+            >
+          </label>
+
+          <div class="field">
+            <span>Arrive</span>
+            <div class="button-row">
+              <button id="from-direct" class="button small" type="button">Directly</button>
+              <button id="from-ads" class="button small" type="button">From a Google ad</button>
+              <button id="from-reset-link" class="button small" type="button">
+                Via a reset link
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <span>Browser</span>
+            <div class="button-row">
+              <button id="flush" class="button small" type="button" title="Send queued events now">
+                Flush queue
+              </button>
+              <button
+                id="hide-page"
+                class="button small"
+                type="button"
+                title="Switch to another tab: the page is hidden"
+              >
+                Switch tab
+              </button>
+              <button
+                id="leave-page"
+                class="button small"
+                type="button"
+                title="Close the page: queued events go out with sendBeacon"
+              >
+                Leave the site
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <span>Site owner</span>
+            <div class="button-row">
+              <button id="new-policy" class="button small" type="button">
+                Publish a new policy version
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <span>Reset</span>
+            <div class="button-row">
+              <button
+                id="reset-consent"
+                class="button small"
+                type="button"
+                title="Forget the decision: the banner appears again"
+              >
+                Consent
+              </button>
+              <button
+                id="reset-visitor"
+                class="button small"
+                type="button"
+                title="Clear all ci_* storage and cookies: a new visitor"
+              >
+                Visitor
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <div>
+          <div id="browser"></div>
+          <div id="status" class="status-strip" aria-live="polite"></div>
+          <section class="card" aria-label="Data flow"><div id="flow"></div></section>
+        </div>
+      </div>
+
+      <section class="card inspector" aria-label="Inspector">
+        <header>
+          <div class="tabs" role="tablist" aria-label="Inspector">
+            <button type="button" role="tab" aria-selected="true" data-tab="network">
+              Sent by the browser <span id="count-network" class="count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-tab="events">
+              Stored events <span id="count-events" class="count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-tab="consents">
+              Consent records <span id="count-consents" class="count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-tab="gtag">
+              Google tag <span id="count-gtag" class="count">0</span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-tab="storage">
+              Browser storage
+            </button>
+          </div>
+          <label class="right filter-row"
+            ><input type="checkbox" id="hide-noise" checked /> Hide <code>web_vital</code> and
+            <code>auto_metrics</code></label
+          >
+        </header>
+        <div class="card-body">
+          <ol data-panel="network" id="feed-network" class="feed" data-testid="network"></ol>
+          <ol data-panel="events" id="feed-events" class="feed" data-testid="events" hidden></ol>
+          <ol
+            data-panel="consents"
+            id="feed-consents"
+            class="feed"
+            data-testid="consents"
+            hidden
+          ></ol>
+          <ol data-panel="gtag" id="feed-gtag" class="feed" data-testid="gtag" hidden></ol>
+          <div data-panel="storage" id="feed-storage" data-testid="storage" hidden></div>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer" aria-label="Project information">
+      <div class="site-footer-inner">
+        <p>© 2026 <a href="https://clearideas.com/">Clear Ideas Incorporated</a></p>
+        <nav aria-label="Project links">
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/LICENSE"
+            >MIT License</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/spec/openapi.yaml"
+            >Collector API (spec)</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics">GitHub</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="/playground-config.js"></script>
+    <script src="/assets/live.js" type="module"></script>
+  </body>
+</html>

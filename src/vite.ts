@@ -50,6 +50,7 @@ declare global {
     readonly VITE_ANALYTICS_TRACK_OUTBOUND_LINKS?: string
     readonly VITE_ANALYTICS_DEBUG?: string
     readonly VITE_ANALYTICS_COOKIE_DOMAIN?: string
+    readonly VITE_ANALYTICS_CREDENTIALS?: 'omit' | 'same-origin' | 'include'
     readonly VITE_ANALYTICS_URL_QUERY_ALLOWLIST?: string
     readonly VITE_ANALYTICS_EXPOSE_GLOBALS?: string
     readonly VITE_ANALYTICS_CLEAN_ATTRIBUTION_URL?: string
@@ -232,6 +233,7 @@ export function createViteAdapter(router?: any): FrameworkAdapter {
         autoTrackOutboundLinks: import.meta.env.VITE_ANALYTICS_TRACK_OUTBOUND_LINKS !== 'false',
         cleanAttributionUrl: import.meta.env.VITE_ANALYTICS_CLEAN_ATTRIBUTION_URL !== 'false',
         cookieDomain: import.meta.env.VITE_ANALYTICS_COOKIE_DOMAIN || undefined,
+        credentials: import.meta.env.VITE_ANALYTICS_CREDENTIALS || undefined,
         urlQueryAllowlist: parseListEnv(import.meta.env.VITE_ANALYTICS_URL_QUERY_ALLOWLIST),
         exposeGlobals: import.meta.env.VITE_ANALYTICS_EXPOSE_GLOBALS === 'true',
         integrations: parseJsonEnv(

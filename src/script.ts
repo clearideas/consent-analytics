@@ -32,6 +32,9 @@ export function readScriptConfig(
   if (data.apiBaseUrl) config.apiBaseUrl = data.apiBaseUrl
   if (data.siteKey) config.siteKey = data.siteKey
   if (data.cookieDomain) config.cookieDomain = data.cookieDomain
+  if (data.credentials === 'include' || data.credentials === 'same-origin') {
+    config.credentials = data.credentials
+  }
   if (data.websiteBaseUrl) config.websiteBaseUrl = data.websiteBaseUrl
   if (data.debug === 'true') config.debug = true
   if (data.banner === 'false') config.banner = false

@@ -6,8 +6,65 @@ Stable publication of the production-validated public browser package. Runtime b
 
 ## Unreleased
 
+### Documentation
+- **A documentation site** (VitePress) in `docs/`: a quick start, core concepts, the browser library (frameworks, configuration, consent, events, attribution, third-party tools, signed-in visitors, privacy and security, API reference, troubleshooting), the collector (Express, `node:http` and Fetch, sites and location, data policies, rules, identity, delivery, storage with example queries, stored data, Redis, retention, configuration, the standalone collector, production, custom adapters, troubleshooting), the collector API and the playground. Run it with `npm ci --prefix docs && npm run docs:dev`; CI builds it (`docs` job), failing on dead links.
+- The package READMEs are now short introductions that link to the documentation.
+- Moved: `docs/THIRD_PARTY.md` → `docs/browser/third-party.md`, `docs/BACKEND.md` → `docs/api-contract.md`, `docs/SERVER_PLAN.md` → `docs/design/server-plan.md`.
+- Removed the chat widget CDN guide (`docs/CDN_USAGE.md`). The `clearIdeasChat` integration is unchanged and documented with the other third-party tools.
+- Corrected: the collector library's README said the browser library honors `Retry-After` on `429`; it doesn't (it retries `408`, `429` and `5xx` at its next flush, up to `maxRetries`, and batches sent with `sendBeacon` when the page is hidden are not retried).
+
+### Signed-in visitors: `credentials` option
+- New option `credentials: 'omit' | 'same-origin' | 'include'` (default `'omit'`, unchanged behavior). Also available as `data-credentials` on the script tag, `analyticsCredentials` in Nuxt and `VITE_ANALYTICS_CREDENTIALS` in Vite.
+- With `'include'`, requests to a collector on the same site carry your authentication cookie (`HttpOnly` included), so the collector can identify signed-in visitors (spec 1.1 *Credentialed requests*).
+- Enable it together with the site's `credentials: true` on the collector. Tested end to end in Chromium (`e2e/identity.spec.ts`) with the collector library in an Express 5 app.
+
+### Collector API 1.1 (`spec/openapi.yaml`)
+These changes are additive. Existing clients and collectors remain valid.
+- `503` with `Retry-After` is declared for every endpoint. Clients already retry it like any `5xx`.
+- Collectors may store asynchronously, for example through a queue. `202`/`201` then mean *accepted for storage*, and `duplicates` may be `0`.
+- Collectors should de-duplicate retried consent records (identical `siteKey`, `consentId`, `decidedAt`, `decision`, `categories` and `policyVersion`) and return the same `recordId`.
+- **Credentialed requests (optional, per site):** a site may allow cookies, so the collector can identify signed-in visitors from the website's own authentication. Identities may be stored only with `full` events.
+- **Tracking categories, clarified:**
+  - `limited` also covers an explicit refusal where consent is not required (`consent.required: false`, `granted: false`).
+  - Collectors must not store IP addresses or identities with `limited` events.
+  - Collectors may store more with `full` events.
+- **Event catalog:** a props schema for each standard event (`x-event-catalog`), plus `FullEventContext`. The table of standard events now matches what the library sends: `web_vital` carries the page context, `time_spent` also sends `duration`, and `auto_metrics` is sent twice.
+- `x-limited-tracking` lists the event names and fields allowed in `limited` events.
+- Tests:
+  - `test/spec-catalog.test.ts` produces every standard event with the real library and checks each against the catalog; every field the browser sends must be documented.
+  - The browser's `limited` allowlists are tested against `x-limited-tracking`.
+
+### Web vitals, measured correctly
+- Observers are registered with `buffered: true`. FCP and TTFB happen before the library usually starts, so they were almost never recorded; now they are.
+- FCP is the `first-contentful-paint` entry (the `first-paint` entry was reported as FCP too). TTFB counts from navigation start (it measured only the server's response time).
+- LCP is reported once, when the page is first hidden, with its final value and the landing page's context (every candidate was sent before).
+- CLS uses session windows (the largest window counts, as web.dev defines it) and is reported again only when it changes.
+- **New: INP**, the responsiveness metric that replaced FID (worst interaction, 98th percentile with many interactions), reported when the page is hidden. FID is still sent. The spec's `WebVitalProps.name` gains `INP` (additive, spec 1.1).
+- Browsers without the buffered form or an entry type keep working (unbuffered, or skipped).
+
+### Playground
+- **Redesigned** in the Clear Ideas style, with four pages: an overview, a **live** playground (the demo website in a browser frame, driven from visitor controls, with every request animated from the browser to the collector and into storage), **scenarios** (15 scripted visitor journeys, each checking the browser, the network, the collector and Google), and **analytics** (charts of everything stored, plus simulated visitors from several regions).
+- The demo website moved to `/site/` and is a standalone page; a wiretap records what the library sends. The end-to-end tests run every scenario (`e2e/playground-pages.spec.ts`).
+- The sample host takes `DATA_POLICY=strict|balanced` (default `strict`); the playground uses `balanced` to show the server-side enrichment. New `/_dev/info`.
+
+### Collector library and standalone collector (new packages, not yet published)
+- New package `server/` (`@clearideas/consent-analytics-server`). It has **no runtime or peer dependencies**. The first part is the protocol module: validators and types generated from the spec, tested to behave exactly like Ajv.
+- Collector core with `node:http` and Fetch API transports, an in-memory store, static sites and header geo. The contract tests run through every transport.
+- `test/client-host.test.ts` now runs the browser library against both the reference collector and the new server.
+- Per-region data policies, server-side enrichment, event rules (repair, not reject), consent annotations, and a typed projection of events following the spec's catalog. `test/spec-catalog.test.ts` checks that the projection uses every value the real browser library sends.
+- Delivery modes for the collector library: direct, buffered in process, or through a queue to a worker.
+- MongoDB store and site source, retention (TTL indexes and a purge job), and data subject export and erasure.
+- Browser and server code can't import each other (ESLint rules + `test/boundaries.test.ts`, `server/test/boundaries.test.ts`).
+- Redis (rate limits, shared caches, locks, a Redis Streams queue) for node-redis, ioredis and Upstash; IPinfo geolocation; `trustProxy` with CIDR ranges; rate limits (`429`).
+- SQS queue; Postgres, MySQL, DynamoDB and SQLite stores. Every store passes the same conformance suite against a real database.
+- New package `collector/` (`@clearideas/consent-analytics-collector`): the library as a standalone service, configured with environment variables, with API/worker modes, health and metrics endpoints, and a Docker image. `docker-compose.yml` now runs it (previously the sample host).
+- **The sample host is now built on the server library**: its own storage, validation and geo code is gone, and the contract, client-host and end-to-end tests run against the library. Its `/_dev` endpoints and the playground are unchanged.
+- Fixed: a continent header listed as trusted (`cf-ipcontinent`) could be read as a country when the country header was missing or `T1` (Tor), e.g. `NA` as Namibia. This affected the previous sample host too.
+- `npm test` in the root, `server/` and `collector/` installs missing or outdated dependencies first (`scripts/ensure-deps.mjs`). Test services are configured with `TEST_*` variables (`TEST_MONGODB_URL`, ...), never an application's own `MONGODB_URL`; a service that is unreachable or fails to start skips its tests with a warning instead of failing the run (unless `REQUIRE_SERVICES=1`).
+- CI: jobs for the standalone collector (all stores and queues as service containers) and its Docker image (smoke test, non-root, clean shutdown). Releases are by tag: `v*`, `server-v*`, `collector-v*`.
+
 ### Third-party tools
-- **Plugin directory:** HubSpot, Intercom, Meta Pixel, LinkedIn Insight Tag, Microsoft Clarity and Hotjar join Google Analytics/Ads, Microsoft UET, OpenAI Ads and Clear Ideas Chat. Each is configured by name under `integrations`, is a separate chunk, and is downloaded only when configured and allowed. Account IDs are validated before they're used in a script URL. See `docs/THIRD_PARTY.md`.
+- **Plugin directory:** HubSpot, Intercom, Meta Pixel, LinkedIn Insight Tag, Microsoft Clarity and Hotjar join Google Analytics/Ads, Microsoft UET, OpenAI Ads and Clear Ideas Chat. Each is configured by name under `integrations`, is a separate chunk, and is downloaded only when configured and allowed. Account IDs are validated before they're used in a script URL. See `docs/browser/third-party.md`.
 - **Consent-gated scripts** for tools without a plugin: `<script type="text/plain" data-ci-consent="marketing" src="…">` runs once its category is allowed. Scripts start in document order (an inline snippet waits for the library above it), and tags added later are picked up. `data-ci-cookies`/`data-ci-storage` name the data to delete. Options: `gatedScripts` (`nonce`, `requireNonce`, `allowedOrigins`), or `false` to turn it off.
 - **Content Security Policy:** under `'strict-dynamic'`, a naive script activator would let injected HTML run code (verified in Chromium). Where the page uses nonces, only gated tags carrying the page's nonce are started; the nonce is read from the library's script tag or `gatedScripts.nonce`.
 - **Refusal and withdrawal:** declared vendor cookies and, new, storage keys (`storage` on plugins) are deleted on an explicit refusal too, on every page load while it stands. Before, they were deleted only when withdrawn after the plugin had run. A withdrawal that running code can't apply in place (plugins with `withdrawal: 'reload'`, custom plugins without `consentChanged`, gated scripts that ran) reloads the page once after the decision is saved. `consent: { reloadOnWithdrawal: false }` turns this off.
@@ -66,7 +123,7 @@ Stable publication of the production-validated public browser package. Runtime b
 - `limited` (pre-consent) events no longer carry the user-agent string; collectors receive it in the request header.
 
 ### Collector API v1 (breaking)
-- The client speaks the documented v1 contract in `spec/openapi.yaml`: `GET /v1/context`, `POST /v1/events`, `POST /v1/consent`. The pre-v1 `/event/*` endpoints are no longer used. See `docs/BACKEND.md` for the mapping.
+- The client speaks the documented v1 contract in `spec/openapi.yaml`: `GET /v1/context`, `POST /v1/events`, `POST /v1/consent`. The pre-v1 `/event/*` endpoints are no longer used. See `docs/api-contract.md` for the mapping.
 - New `siteKey` option (Nuxt `analyticsSiteKey`, Vite `VITE_ANALYTICS_SITE_KEY`). `eventSiteName` still works as a fallback.
 - The consent decision is stored in the browser and applies immediately. The collector receives append-only consent records with a stable `consentId` and the `policyVersion`; undelivered records are retried on the next visit. A new policy version asks visitors again.
 - Requests carry no cookies (`credentials: 'omit'`) and use `text/plain` JSON bodies, so no CORS preflight is needed and `sendBeacon` works cross-origin.

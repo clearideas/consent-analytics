@@ -15,6 +15,7 @@ import {
   getViewportBucket,
   isEssentialEvent,
   normalizeEventName,
+  requestCredentials,
   sanitizeEventUrls,
   sanitizeUrl,
 } from './core'
@@ -151,7 +152,7 @@ export async function retryFailedEvents(config: AnalyticsConfig): Promise<void> 
         method: 'POST',
         headers: { 'Content-Type': BODY_CONTENT_TYPE },
         body: item.payload,
-        credentials: 'omit',
+        credentials: requestCredentials(config),
         keepalive: true,
       })
 

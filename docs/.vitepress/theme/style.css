@@ -1,0 +1,298 @@
+/* Clear Ideas documentation theme (VitePress default theme, adjusted). */
+
+/* Inter, served from this site: no requests to third-party font services. */
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-roman-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --vp-c-brand-1: #4080f2;
+  --vp-c-brand-2: #326fd9;
+  --vp-c-brand-3: #4080f2;
+  --vp-c-brand-soft: rgba(64, 128, 242, 0.14);
+  --vp-c-bg-alt: #f7f8fa;
+  --vp-button-brand-bg: #4080f2;
+  --vp-button-brand-hover-bg: #326fd9;
+  --vp-button-brand-active-bg: #285fc2;
+  --vp-code-line-height: 1.65;
+  --vp-font-family-base:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --vp-font-family-mono:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.dark {
+  --vp-c-brand-1: #4080f2;
+  --vp-c-brand-2: #6ea1fb;
+  --vp-c-brand-3: #4080f2;
+  --vp-c-brand-soft: rgba(64, 128, 242, 0.18);
+  --vp-c-bg: #181818;
+  --vp-c-bg-alt: #1f1f1f;
+  --vp-c-bg-elv: #1f1f1f;
+  --vp-c-bg-soft: #1f1f1f;
+}
+
+.VPNavBar .wrapper {
+  padding: 0;
+}
+
+.VPNavBar > .wrapper > .container {
+  max-width: none;
+  padding: 0 8px 0 24px;
+}
+
+@media (min-width: 768px) {
+  .VPNavBar > .wrapper > .container {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+.VPNavBar {
+  background-color: var(--vp-nav-bg-color) !important;
+}
+
+.VPNavBar::after {
+  background-color: var(--vp-c-divider);
+  bottom: 0;
+  content: "";
+  height: 1px;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  z-index: 10;
+}
+
+.VPNavBar .divider {
+  display: none;
+}
+
+.VPNavBarTitle.has-sidebar .title {
+  border-bottom: 0;
+}
+
+.VPNavBarTitle .title {
+  color: color-mix(in srgb, var(--vp-c-text-1) 78%, transparent);
+  font-family: var(--vp-font-family-base);
+  font-size: 1rem;
+  gap: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1;
+}
+
+.VPNavBarTitle .logo {
+  height: auto;
+  margin: 0;
+  width: 154px;
+}
+
+.dark .VPNavBarTitle .logo {
+  filter: invert(1);
+}
+
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar > .wrapper > .container {
+    align-items: center;
+    padding: 0 32px;
+  }
+
+  .VPNavBar.has-sidebar > .wrapper > .container > .title {
+    flex: 0 0 auto;
+    padding: 0;
+    position: static;
+    width: auto;
+  }
+
+  .VPNavBar.has-sidebar .VPNavBarTitle,
+  .VPNavBar.has-sidebar .VPNavBarTitle .title {
+    width: auto;
+  }
+
+  .VPNavBar.has-sidebar .content {
+    min-width: 0;
+    padding: 0 0 0 24px;
+    position: static;
+  }
+
+  .VPNavBar.has-sidebar .content-body {
+    position: static;
+    width: 100%;
+  }
+}
+
+/* Match the sidebar menu's outer gutter on wide screens. */
+@media (min-width: 1440px) {
+  .VPNavBar.has-sidebar > .wrapper > .container {
+    padding-left: max(
+      32px,
+      calc((100% - (var(--vp-layout-max-width) - 64px)) / 2)
+    );
+  }
+}
+
+/* Keep navigation usable at smaller desktop widths. */
+@media (min-width: 960px) and (max-width: 1279px) {
+  .VPNavBar.has-sidebar .content {
+    padding-left: 16px;
+  }
+  .VPNavBar .VPNavBarSearch {
+    padding-left: 0;
+    flex-grow: 0;
+  }
+  .VPNavBar .DocSearch-Button {
+    justify-content: center;
+    width: 40px;
+    padding: 0;
+    background: transparent;
+  }
+  .VPNavBar .DocSearch-Button .DocSearch-Search-Icon {
+    margin-right: 0;
+  }
+  .VPNavBar .DocSearch-Button-Placeholder,
+  .VPNavBar .DocSearch-Button-Keys {
+    display: none;
+  }
+}
+
+@media (min-width: 960px) and (max-width: 1199px) {
+  .VPNavBarTitle .title > span {
+    display: none;
+  }
+}
+
+.VPDoc .content-container {
+  max-width: 780px;
+}
+
+
+.vp-doc h1 {
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.vp-doc h2 {
+  border-top: 1px solid var(--vp-c-divider);
+  margin-top: 48px;
+  padding-top: 32px;
+}
+
+.vp-doc h3 {
+  margin-top: 32px;
+}
+
+.vp-doc table {
+  display: table;
+  width: 100%;
+}
+
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+}
+
+.vp-doc .custom-block {
+  border-radius: 10px;
+}
+
+.ca-hero {
+  padding: 24px 0 12px;
+}
+
+.ca-hero p {
+  color: var(--vp-c-text-2);
+  font-size: 20px;
+  line-height: 1.6;
+  max-width: 700px;
+}
+
+.ca-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 28px 0;
+}
+
+.ca-card {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  color: var(--vp-c-text-1) !important;
+  padding: 18px 20px;
+  text-decoration: none !important;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.ca-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-1px);
+}
+
+.ca-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.ca-card span {
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ca-flow {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+  margin: 24px 0;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.ca-flow > div {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  flex: 1 0 130px;
+  padding: 14px;
+  text-align: center;
+}
+
+.ca-flow > span {
+  align-self: center;
+  color: var(--vp-c-text-3);
+  font-size: 18px;
+}
+
+@media (max-width: 640px) {
+  .VPNavBarTitle .logo {
+    width: 132px;
+  }
+
+  .VPNavBarTitle .title > span {
+    display: none;
+  }
+
+  .ca-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.ca-flow small {
+  color: var(--vp-c-text-2);
+}
+
+/* Option and field tables: keep names on one line. */
+.vp-doc td:first-child code {
+  white-space: nowrap;
+}

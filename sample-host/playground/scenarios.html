@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Scripted visitor journeys that check the browser, the network, the collector and Google at every step."
+    />
+    <title>Scenarios · Consent Analytics Playground</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16x16.png" />
+    <link rel="stylesheet" href="/assets/playground.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">
+          <img src="/assets/clearideas-logo.svg" alt="Clear Ideas" />
+          <span>Consent Analytics</span>
+        </a>
+        <nav class="site-nav" aria-label="Playground">
+          <a href="/">Overview</a>
+          <a href="/live">Live</a>
+          <a href="/scenarios">Scenarios</a>
+          <a href="/analytics">Analytics</a>
+        </nav>
+        <span class="spacer"></span>
+        <span id="collector-chip" class="chip"><i></i>Collector…</span>
+        <button id="run-all" class="button primary" type="button" data-state="idle">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="run-all-label">Run all</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="demo-intro">
+        <h1>Scenarios</h1>
+        <p>
+          Scripted visitors on the demo website. Each scenario acts like a real visitor, then checks
+          every layer: what the <strong>browser</strong> shows and keeps, what left it on the
+          <strong>network</strong>, what the <strong>collector</strong> stored, and what
+          <strong>Google</strong> received. Nothing is mocked except Google's tag.
+        </p>
+      </section>
+
+      <div class="toolbar">
+        <div class="field">
+          <span>Speed</span>
+          <div class="segmented" role="radiogroup" aria-label="Speed">
+            <label><input type="radio" name="speed" value="normal" checked /> Watchable</label>
+            <label><input type="radio" name="speed" value="fast" /> Fast</label>
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <dl id="summary" class="stats summary-tiles" aria-label="Results"></dl>
+      </div>
+
+      <div class="scenario-layout">
+        <nav class="card" aria-label="Scenarios">
+          <ol id="scenario-list" class="scenario-list"></ol>
+        </nav>
+
+        <section class="card" aria-labelledby="run-title">
+          <div class="run-head">
+            <span id="run-signal" class="signal"></span>
+            <span id="run-title">Choose a scenario, or run them all</span>
+            <span id="run-elapsed" class="elapsed">0.0s</span>
+            <button id="run-one" class="button small" type="button">Run this scenario</button>
+          </div>
+          <div id="run-flow"></div>
+          <div class="run-grid">
+            <div>
+              <h3 class="lane-title">Visitor's browser</h3>
+              <div id="browser"></div>
+            </div>
+            <div>
+              <h3 class="lane-title">Steps</h3>
+              <ol id="steps" class="step-list"></ol>
+            </div>
+          </div>
+          <div class="card-body" style="padding-top: 0">
+            <h3 class="lane-title">Checks</h3>
+            <table class="checks" aria-label="Checks">
+              <thead>
+                <tr>
+                  <th>Check</th>
+                  <th>Layer</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="checks"></tbody>
+            </table>
+            <p id="checks-empty" class="empty" style="margin-top: 12px">
+              Checks appear here while the scenario runs.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <details class="card under-the-hood">
+        <summary><span>Under the hood</span><small>The scenario's script</small></summary>
+        <div class="card-body">
+          <p class="caption">
+            From <code>playground/assets/lib/scenarios.js</code>. The same scenarios run in CI, in
+            Chromium.
+          </p>
+          <pre id="source" class="source">Choose a scenario.</pre>
+        </div>
+      </details>
+    </main>
+    <footer class="site-footer" aria-label="Project information">
+      <div class="site-footer-inner">
+        <p>© 2026 <a href="https://clearideas.com/">Clear Ideas Incorporated</a></p>
+        <nav aria-label="Project links">
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/LICENSE"
+            >MIT License</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics/blob/main/spec/openapi.yaml"
+            >Collector API (spec)</a
+          >
+          <a href="https://github.com/clearideas/consent-analytics">GitHub</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="/playground-config.js"></script>
+    <script src="/assets/scenarios-page.js" type="module"></script>
+  </body>
+</html>

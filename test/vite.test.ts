@@ -91,6 +91,7 @@ describe('Vite environment mapping', () => {
     vi.stubEnv('VITE_ANALYTICS_RESPECT_GPC', 'false')
     vi.stubEnv('VITE_ANALYTICS_URL_QUERY_ALLOWLIST', 'q,page')
     vi.stubEnv('VITE_ANALYTICS_COOKIE_DOMAIN', 'example.com')
+    vi.stubEnv('VITE_ANALYTICS_CREDENTIALS', 'include')
     vi.stubEnv('VITE_ANALYTICS_BATCH_SIZE', '5')
     vi.stubEnv('VITE_CHAT_WIDTH', '400')
     vi.stubEnv('VITE_GOOGLE_ADS_CONVERSIONS', '{"sign_up":"AW-1/x"}')
@@ -104,6 +105,7 @@ describe('Vite environment mapping', () => {
       respectGlobalPrivacyControl: false,
       urlQueryAllowlist: ['q', 'page'],
       cookieDomain: 'example.com',
+      credentials: 'include',
       batchSize: 5,
       chatWidth: 400,
       googleAdsConversions: { sign_up: 'AW-1/x' },

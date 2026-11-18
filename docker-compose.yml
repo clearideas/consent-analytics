@@ -1,18 +1,73 @@
-# Runs the reference collector. Edit sample-host/sites.example.json (or mount your own)
-# to register your sites. Behind Cloudflare, the country header is trusted below;
-# only trust headers your proxy sets, or clients can choose their own consent policy.
+# The standalone collector (collector/, configured by environment variables; see
+# collector/README.md).
+#
+#   docker compose up                     SQLite in a volume, one process
+#   docker compose --profile queued up    MongoDB + Redis: API and worker as separate services
+#
+# Edit collector/sites.example.json (or mount your own) to register your sites. Behind
+# Cloudflare the country header is trusted below; only trust headers your proxy sets, or
+# clients can choose their own consent policy.
+x-collector: &collector
+  build:
+    context: .
+    dockerfile: collector/Dockerfile
+  image: consent-analytics-collector
+  restart: unless-stopped
+  volumes:
+    - ./collector/sites.example.json:/config/sites.json:ro
+
 services:
   collector:
-    build:
-      context: .
-      dockerfile: sample-host/Dockerfile
+    <<: *collector
     ports:
       - '8787:8787'
     environment:
       SITES_FILE: /config/sites.json
       TRUSTED_GEO_HEADERS: cf-ipcountry
+      # Optional: a long random secret (e.g. `openssl rand -base64 32`) for rate-limit and
+      # cache keys; required by data policies that store hashed IP addresses.
+      HASH_SECRET: ${HASH_SECRET:-}
     volumes:
-      - ./sample-host/sites.example.json:/config/sites.json:ro
+      - ./collector/sites.example.json:/config/sites.json:ro
       - collector-data:/data
+
+  # --- profile "queued": the API answers from Redis, a worker writes to MongoDB ----------
+  collector-api:
+    <<: *collector
+    profiles: [queued]
+    ports:
+      - '8788:8787'
+    environment: &queued-env
+      MODE: api
+      STORE: mongodb
+      MONGODB_URL: mongodb://mongodb:27017/analytics
+      QUEUE: redis
+      REDIS_URL: redis://redis:6379
+      SITES_FILE: /config/sites.json
+      TRUSTED_GEO_HEADERS: cf-ipcountry
+      HASH_SECRET: ${HASH_SECRET:-}
+      RATE_LIMIT_PER_IP: 600/1m
+    depends_on: [mongodb, redis]
+  collector-worker:
+    <<: *collector
+    profiles: [queued]
+    environment:
+      <<: *queued-env
+      MODE: worker
+    depends_on: [mongodb, redis]
+  mongodb:
+    image: mongo:8
+    profiles: [queued]
+    volumes:
+      - mongodb-data:/data/db
+  redis:
+    image: redis:7-alpine
+    profiles: [queued]
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+
 volumes:
   collector-data: {}
+  mongodb-data: {}
+  redis-data: {}

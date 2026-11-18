@@ -54,6 +54,7 @@ describe('Nuxt runtime config mapping', () => {
       analyticsBanner: { acceptLabel: 'OK', manageButton: false },
       analyticsRespectGpc: false,
       analyticsCookieDomain: 'example.com',
+      analyticsCredentials: 'include',
       analyticsUrlQueryAllowlist: 'q, page',
       analyticsExposeGlobals: true,
       analyticsBatchSize: '25',
@@ -67,6 +68,7 @@ describe('Nuxt runtime config mapping', () => {
       banner: { acceptLabel: 'OK', manageButton: false },
       respectGlobalPrivacyControl: false,
       cookieDomain: 'example.com',
+      credentials: 'include',
       urlQueryAllowlist: ['q', 'page'],
       exposeGlobals: true,
       batchSize: 25,
@@ -86,6 +88,7 @@ describe('Nuxt runtime config mapping', () => {
     })
     expect(config.banner).toBeUndefined()
     expect(config.integrations).toBeUndefined()
+    expect(config.credentials).toBeUndefined()
   })
 
   it('banner: false disables the built-in banner; invalid JSON is ignored with a warning', async () => {

@@ -1,0 +1,73 @@
+# Changelog: @clearideas/consent-analytics-server
+
+## Unreleased (0.1.0)
+
+- Protocol module generated from `spec/openapi.yaml` 1.1.0:
+  - `validate()` for every schema
+  - the contract's limits and patterns
+  - `LIMITED_TRACKING`, `EVENT_CATALOG`
+  - TypeScript types
+- Zero dependencies, verified on the packed tarball (`npm run check:package`).
+- **Collector core** (`createCollector`): every endpoint of the spec.
+  - CORS on every response, including errors; preflights.
+  - `text/plain` and JSON bodies; limits enforced while streaming (`413`); `415`.
+  - Validation with per-event `rejected[]`.
+  - Idempotent events; deterministic consent `recordId`s, so retried records are stored once.
+  - `503` with `Retry-After` when the store or site source fails; the region is unknown (consent required) when geo fails.
+  - `404`/`405` as problem details; `X-Request-Id`; pluggable logger; an `onError` hook.
+- **Transports:**
+  - `/node`: `toNodeHandler` (also Connect-style middleware), and `createCollectorServer` with timeouts and graceful shutdown.
+  - `trustProxy` for client IPs.
+  - `/fetch`: `toFetchHandler` for Fetch API platforms.
+- `memoryStore()`, `staticSites()`/`defineSite()`, `trustedHeaderGeo`/`fixedGeo`/`chainGeo`, `regionPolicy`.
+- **Data policies:** per-region profiles (consent requirement, what is stored, retention), as JSON (with a published schema) or presets: `balancedDataPolicy()` (the default) and `strictDataPolicy()`.
+  - The contract's fixed rules are enforced at startup: unknown regions require consent; nothing identifying is stored with limited events.
+- **Enrichment**, per profile: IP address (full, /24-/48 truncated, or hashed with a daily key), location (country to coordinates), network, parsed/raw user agent and bot flag, language, Global Privacy Control, and privacy flags. `Geo` resolvers may return all of these.
+- **Event rules** (`standard`, `strict`, `off`, custom):
+  - repair toward the more private reading and record it in `sanitized`;
+  - drop what can't be allowed;
+  - correct clock skew (`occurredAtCorrected`);
+  - per-site event name lists.
+- **Consent records:** `annotations` (e.g. `decision-categories-mismatch`); `profile`; `retainUntil`.
+- **Typed projection** of every event, from the spec's event catalog: `page`, `attribution`, `client`, `engagement`, `vital`, `load`, `outbound`, `error`.
+- `regionPolicy` and the `policy` option are replaced by `dataPolicy`.
+- **Express middleware** (`/express`): `collectorMiddleware(collector, { identify })` for Express 5 and 4, without importing Express.
+  - Uses bodies already parsed by `express.json`/`text`/`raw`, with size limits still enforced.
+  - Removes CORS headers set by an earlier `cors()`.
+  - Uses `req.ip` (`trust proxy`).
+  - Passes other paths to `next()`, and unexpected errors to `next(error)`.
+- **Identity:**
+  - Sites can enable credentialed requests (`credentials: true`; credentials are allowed for their origins only).
+  - `identify` (collector option, or per-request from adapters) returns the signed-in visitor.
+  - `identity: { keys, traits, consentRecords }` controls what is stored: keys on full events (where the profile allows) and on consent records; traits once per identity via `store.upsertIdentity`.
+  - Never on limited events.
+  - Non-credentialed sites ignore cookies, including those attached by `sendBeacon`.
+- The contract suite runs through Express 5 and 4 as well (5 transports).
+- **Delivery modes** per endpoint (`delivery.events`, `delivery.consent`):
+  - `direct`, `buffered` (in-process buffer), and `queued` (`ack: 'durable' | 'fast'`).
+  - Bounded buffers with backpressure (`whenFull`), retries with backoff, flushing on `close()`, and `collector.stats()`.
+  - The store is optional when both endpoints are queued.
+- **Queues and workers:**
+  - The `IngestQueue` interface, `memoryQueue()`, and the versioned message envelope (`encodeMessage`/`decodeMessage`).
+  - `createIngestProcessor` (bulk writes, isolation of failing messages).
+  - `runWorker`: retries with growing delays, dead-lettering, pausing during outages, concurrency, graceful `stop()`.
+- **MongoDB** (`/mongodb`): `mongoStore` (native driver `Db` or `mongoose.connection.db`, lazily), `ensureMongoIndexes` (TTL on `retainUntil`, reporting and identity indexes), `mongoSites`.
+- **Sites:** `cachedSites` (TTL, negative caching, shared lookups, `invalidate`) and `chainSites`.
+- **Retention:** `store.purge` (own expiry dates, expired IP and raw user agent fields, per-profile cutoffs from the current policy), `purgeExpired`, `startRetention` (interval, optional lock).
+- **Data subject requests:** `store.exportSubject` and `store.eraseSubject` (events and identities deleted; consent records de-identified) on every included store.
+- NUL characters are removed from event props (`nul-characters-removed`); a consent `policyVersion` with one is refused.
+- **Rate limits** (`rateLimit: { limiter, perIp, perSite, onError }`): `429` with `Retry-After`; keys never contain an IP address. `memoryRateLimiter()`; the `Cache` interface and `memoryCache()`.
+- **Redis** (`/redis`), for node-redis, ioredis and Upstash (`fromNodeRedis`, `fromIoredis`, `fromUpstash`):
+  - `redisRateLimiter` (shared limits, optional in-memory fallback), `redisCache` (shared site and geo caches: `cachedSites(..., { shared })`), `redisLock` (retention);
+  - `redisStreamQueue`: consumer groups, reclaiming messages of crashed workers, delayed retries, a dead-letter stream.
+- **IPinfo** (`/ipinfo`): `ipinfoGeo` (classic and newer API formats, US/Canadian region codes, timeouts, local and shared caches keyed by HMAC, non-public addresses skipped, rate-limited warnings); `geoFromIpinfo`, `isNonPublicIp`.
+- **`trustProxy`** also takes a list of addresses and CIDR ranges (validated at startup).
+- **`createCollectorServer({ routes })`**: extra handlers by exact path (health checks, metrics).
+- **SQS** (`/sqs`): `sqsQueue` (batches of 10 entries / 256 KiB, receive counts as attempts, visibility-based retries, dead-letter queue or redrive policy).
+- **Stores**, all passing the store conformance suite:
+  - **Postgres** (`/postgres`): `postgresStore`, `migratePostgres`, `postgresMigrations` (`jsonb` documents with indexed columns);
+  - **MySQL 8** (`/mysql`): `mysqlStore`, `migrateMysql`, `mysqlMigrations`;
+  - **DynamoDB** (`/dynamodb`): `dynamoStore`, `createDynamoTable` (one table, TTL on `expiresAt`);
+  - **SQLite** (`/sqlite`): `sqliteStore` on `node:sqlite` (Node 22.13+).
+- The Express and `node:http` adapters pause the request stream on entry, so an earlier middleware that resumes it (older `cors` versions do) can't lose the body.
+- `trustedHeaderGeo` never reads a continent header (e.g. `cf-ipcontinent`) as a country, and `EU`, `AP`, `A1`, `A2`, `O1` and `ZZ` are not countries: previously a Tor visitor with `cf-ipcontinent: NA` could be placed in Namibia.

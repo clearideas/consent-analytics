@@ -1,16 +1,17 @@
-// Contract tests: the reference host against spec/openapi.yaml.
-// Every response is validated against the schema the spec declares for that
-// operation and status code.
+// Contract tests: the reference collector (the collector library mounted by sample-host)
+// against spec/openapi.yaml. Every response is validated against the schema the spec
+// declares for that operation and status code.
 import { writeFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { createApp, EVENTS_MAX_BYTES } from '../src/app.ts'
+import { memoryStore } from '../../server/src/index.ts'
+import { EVENTS_MAX_BYTES } from '../../server/src/protocol/index.ts'
+import { createApp } from '../src/app.ts'
 import type { HostConfig, SiteConfig } from '../src/config.ts'
 import { DEFAULT_CONSENT_COUNTRIES, loadConfig } from '../src/config.ts'
 import type { SchemaName } from '../src/spec.ts'
 import { createValidator, loadSpec } from '../src/spec.ts'
-import { SqliteStore } from '../src/sqlite-store.ts'
 
 const spec = loadSpec()
 const validator = createValidator(spec)
@@ -40,8 +41,7 @@ function hostConfig(overrides: Partial<HostConfig> = {}): HostConfig {
 function host(overrides: Partial<HostConfig> = {}) {
   const { app, store } = createApp({
     config: hostConfig(overrides),
-    store: new SqliteStore(':memory:'),
-    validator,
+    store: memoryStore(),
     now: () => new Date('2026-11-10T12:00:05.000Z'),
   })
   return { app, store }
@@ -203,6 +203,9 @@ describe('GET /v1/context', () => {
       { 'cf-ipcountry': 'XX' },
       { 'cf-ipcountry': 'T1' },
       { 'cf-ipcountry': 'not-a-country' },
+      // A continent is not a country (NA would be Namibia).
+      { 'cf-ipcountry': 'T1', 'cf-ipcontinent': 'NA' },
+      { 'cf-ipcontinent': 'EU' },
     ]
     for (const headers of cases) {
       const { body } = await call(app, 'get', '/v1/context?siteKey=example-site', { headers })
@@ -285,7 +288,7 @@ describe('POST /v1/events', () => {
     const { app, store } = host()
     const e = event({ trackingCategory: 'limited', consent: { required: true, granted: false } })
     await call(app, 'post', '/v1/events', { body: batch([e]) })
-    expect(store.listEvents(SITE.siteKey)).toEqual([
+    expect(await store.listEvents({ siteKey: SITE.siteKey })).toEqual([
       expect.objectContaining({
         eventId: e.eventId,
         name: 'page_view',
@@ -293,8 +296,7 @@ describe('POST /v1/events', () => {
         sentAt: '2026-11-10T12:00:01.000Z',
         receivedAt: '2026-11-10T12:00:05.000Z',
         trackingCategory: 'limited',
-        consentRequired: true,
-        consentGranted: false,
+        consent: { required: true, granted: false },
         props: e.props,
         origin: ORIGIN,
       }),
@@ -308,7 +310,7 @@ describe('POST /v1/events', () => {
     const { response, body } = await call(app, 'post', '/v1/events', { body: batch([e, event()]) })
     expect(response.status).toBe(202)
     expect(body).toEqual({ accepted: 1, duplicates: 1, rejected: [] })
-    expect(store.listEvents()).toHaveLength(2)
+    expect(await store.listEvents()).toHaveLength(2)
   })
 
   it('accepts the valid events of a batch and reports the invalid ones', async () => {
@@ -327,7 +329,7 @@ describe('POST /v1/events', () => {
     expect(body.rejected.map((r: any) => r.index)).toEqual([1, 2, 3])
     expect(body.rejected[0].errors[0].path).toBe('/name')
     expect(body.rejected[2].errors[0].path).toBe('/props/s')
-    expect(store.listEvents().map(e => e.eventId)).toEqual([good.eventId])
+    expect((await store.listEvents()).map(e => e.eventId)).toEqual([good.eventId])
   })
 
   it('rejects an invalid envelope as a whole', async () => {
@@ -378,7 +380,7 @@ describe('POST /v1/events', () => {
         })
       ).response.status,
     ).toBe(403)
-    expect(store.listEvents()).toHaveLength(0)
+    expect(await store.listEvents()).toHaveLength(0)
   })
 
   it('rejects bodies over 64 KiB with 413', async () => {
@@ -399,7 +401,7 @@ describe('POST /v1/consent', () => {
       consentId: 'consent00000000000000001',
       recordedAt: '2026-11-10T12:00:05.000Z',
     })
-    const records = store.listConsents(SITE.siteKey)
+    const records = await store.listConsents({ siteKey: SITE.siteKey })
     expect(records.map(r => r.decision)).toEqual(['granted', 'denied'])
     expect(records[0]).not.toHaveProperty('ip')
   })
@@ -472,6 +474,84 @@ describe('development endpoints', () => {
   })
 })
 
+describe('development endpoints (DEV_MODE)', () => {
+  it('list stored events with flat consent fields, and consent records', async () => {
+    const { app } = host({ devMode: true })
+    await call(app, 'post', '/v1/events', {
+      body: batch([event({ consent: { required: true, granted: true } })]),
+    })
+    await call(app, 'post', '/v1/consent', { body: consentRecord() })
+    const events = await (await app.request('/_dev/events?siteKey=example-site')).json()
+    expect(events).toEqual([
+      expect.objectContaining({ name: 'page_view', consentRequired: true, consentGranted: true }),
+    ])
+    const consents = await (await app.request('/_dev/consents')).json()
+    expect(consents).toEqual([expect.objectContaining({ consentId: 'consent00000000000000001' })])
+  })
+
+  it("allow the configured sites' origins (the playground is another origin)", async () => {
+    const { app } = host({ devMode: true })
+    const ok = await app.request('/_dev/state', { headers: { Origin: ORIGIN } })
+    expect(ok.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN)
+    const preflight = await app.request('/_dev/geo', {
+      method: 'OPTIONS',
+      headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'POST' },
+    })
+    expect(preflight.status).toBe(204)
+    const foreign = await app.request('/_dev/state', {
+      headers: { Origin: 'https://evil.example' },
+    })
+    expect(foreign.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(
+      (
+        await app.request('/_dev/geo', {
+          method: 'OPTIONS',
+          headers: { Origin: 'https://evil.example' },
+        })
+      ).status,
+    ).toBe(403)
+  })
+
+  it('change a site policy, and reset restores the configuration and clears the store', async () => {
+    const { app, store } = host({ devMode: true })
+    const post = (path: string, body: unknown) =>
+      app.request(path, { method: 'POST', body: JSON.stringify(body) })
+
+    expect((await post('/_dev/policy', { siteKey: 'nope' })).status).toBe(404)
+    await post('/_dev/policy', {
+      siteKey: 'example-site',
+      policyVersion: '2027-01-01',
+      consentMode: 'always',
+    })
+    const { body } = await call(app, 'get', '/v1/context?siteKey=example-site', {
+      headers: { 'cf-ipcountry': 'US' },
+    })
+    expect(body.policy).toMatchObject({
+      consentRequired: true,
+      reason: 'site',
+      policyVersion: '2027-01-01',
+    })
+    await post('/_dev/geo', { country: 'US' })
+    await call(app, 'post', '/v1/events', { body: batch([event()]) })
+    expect(await store.listEvents()).toHaveLength(1)
+
+    expect((await post('/_dev/reset', {})).status).toBe(200)
+    expect(await store.listEvents()).toHaveLength(0)
+    const state = await (await app.request('/_dev/state')).json()
+    expect(state).toEqual({
+      geoOverride: null,
+      sites: [
+        {
+          siteKey: 'example-site',
+          policyVersion: '2026-11-01',
+          consentMode: 'geo',
+          trackingWithoutConsent: 'limited',
+        },
+      ],
+    })
+  })
+})
+
 describe('configuration', () => {
   it('provides a working demo site by default', () => {
     const config = loadConfig({ PLAYGROUND_PORT: '5173' })
@@ -514,7 +594,7 @@ describe('consent categories and tracking without consent', () => {
     })
 
     expect(response.status).toBe(201)
-    expect(store.listConsents()[0]).toMatchObject({ decision: 'partial', categories })
+    expect((await store.listConsents())[0]).toMatchObject({ decision: 'partial', categories })
   })
 
   it('validates categories', async () => {

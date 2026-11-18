@@ -51,6 +51,14 @@ export interface AnalyticsConfig {
   autoTrackOutboundLinks: boolean
   cleanAttributionUrl?: boolean // Remove attribution params from visible URL after capture (default: true)
   cookieDomain?: string // Share attribution across subdomains via a cookie on this domain (e.g. 'example.com'). Default: no cookie.
+  /**
+   * Send cookies with requests to the collector. Default `'omit'`: no credentials.
+   * `'include'`: the collector shares the website's site (e.g. api.example.com for
+   * www.example.com) and identifies signed-in visitors from your own auth cookie; the site
+   * must enable credentialed requests on the collector (spec: *Credentialed requests*).
+   * `'same-origin'`: the collector is on the website's own origin.
+   */
+  credentials?: 'omit' | 'same-origin' | 'include'
   urlQueryAllowlist?: string[] // Extra query parameters to keep in page URLs (campaign parameters are always kept)
   exposeGlobals?: boolean // Expose window.ciAnalytics helpers (also enabled by debug). Default: false
   nodeEnv?: string
@@ -71,7 +79,7 @@ export interface AnalyticsConfig {
   plugins?: AnalyticsPlugin[]
   /**
    * Consent-gated <script type="text/plain" data-ci-consent="…"> tags for tools without a
-   * plugin (see docs/THIRD_PARTY.md). On by default; false turns it off.
+   * plugin (see docs/browser/third-party.md). On by default; false turns it off.
    */
   gatedScripts?: GatedScriptsOptions | false
   /** Consent banner text and behavior. false: no built-in banner (use analytics.consent). */

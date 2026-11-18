@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Clear Ideas Consent Analytics documentation hosting
+
+Parameters:
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN in us-east-1 for the documentation domain
+  DomainName:
+    Type: String
+    Default: content-analytics.clearideas.com
+  GitHubSubjectPrefix:
+    Type: String
+    Default: repo:clearideas@1463478/consent-analytics@1451652739
+    Description: Immutable GitHub OIDC subject prefix for the repository
+  ResourceName:
+    Type: String
+    Default: consent-analytics-documentation
+    Description: Prefix for CloudFront and IAM resources
+
+Resources:
+  DocumentationBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref DomainName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldRevisions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  DocumentationOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Access to the Consent Analytics documentation bucket
+        Name: !Ref ResourceName
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  DocumentationRequestFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      AutoPublish: true
+      Name: !Sub "${ResourceName}-routes"
+      FunctionConfig:
+        Comment: Resolve VitePress clean URLs to generated HTML files
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+
+          if (uri.endsWith('/')) {
+            request.uri = uri + 'index.html';
+          } else if (uri === '/browser' || uri === '/server') {
+            request.uri = uri + '/index.html';
+          } else if (uri.slice(uri.lastIndexOf('/') + 1).indexOf('.') === -1) {
+            request.uri = uri + '.html';
+          }
+
+          return request;
+        }
+
+  DocumentationResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${ResourceName}-headers"
+        Comment: Security headers for the Consent Analytics documentation
+        SecurityHeadersConfig:
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Override: true
+
+  DocumentationCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${ResourceName}-cache"
+        Comment: Respect origin cache headers for HTML and static assets
+        DefaultTTL: 300
+        MinTTL: 0
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  DocumentationDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref DomainName
+        Comment: !Sub "${DomainName} documentation"
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ErrorCachingMinTTL: 10
+            ResponseCode: 404
+            ResponsePagePath: /404.html
+          - ErrorCode: 404
+            ErrorCachingMinTTL: 10
+            ResponseCode: 404
+            ResponsePagePath: /404.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: !Ref DocumentationCachePolicy
+          Compress: true
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt DocumentationRequestFunction.FunctionARN
+          ResponseHeadersPolicyId: !Ref DocumentationResponseHeadersPolicy
+          TargetOriginId: documentation-s3-origin
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - DomainName: !GetAtt DocumentationBucket.RegionalDomainName
+            Id: documentation-s3-origin
+            OriginAccessControlId: !GetAtt DocumentationOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  DocumentationBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentationBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${DocumentationBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub
+                  - "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}"
+                  - DistributionId: !Ref DocumentationDistribution
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - s3:*
+            Resource:
+              - !GetAtt DocumentationBucket.Arn
+              - !Sub "${DocumentationBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourceName}-github-actions"
+      Description: Deploy Consent Analytics documentation from GitHub Actions
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action:
+              - sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "${GitHubSubjectPrefix}:environment:documentation"
+      Policies:
+        - PolicyName: deploy-documentation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ListDocumentationBucket
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !GetAtt DocumentationBucket.Arn
+              - Sid: ManageDocumentationObjects
+                Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${DocumentationBucket.Arn}/*"
+              - Sid: InvalidateDocumentationDistribution
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                Resource: !Sub
+                  - "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}"
+                  - DistributionId: !Ref DocumentationDistribution
+
+Outputs:
+  BucketName:
+    Value: !Ref DocumentationBucket
+  DistributionDomainName:
+    Value: !GetAtt DocumentationDistribution.DomainName
+  DistributionId:
+    Value: !Ref DocumentationDistribution
+  GitHubActionsRoleArn:
+    Value: !GetAtt GitHubActionsDeployRole.Arn

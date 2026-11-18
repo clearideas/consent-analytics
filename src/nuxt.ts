@@ -107,6 +107,7 @@ export function nuxtAnalyticsConfig(config: Record<string, any>): AnalyticsConfi
     autoTrackOutboundLinks: config.analyticsTrackOutboundLinks !== false,
     cleanAttributionUrl: config.analyticsCleanAttributionUrl !== false,
     cookieDomain: (config.analyticsCookieDomain as string | undefined) || undefined,
+    credentials: (config.analyticsCredentials as AnalyticsConfig['credentials']) || undefined,
     urlQueryAllowlist: parseListConfig(config.analyticsUrlQueryAllowlist),
     exposeGlobals: config.analyticsExposeGlobals === true,
     integrations: parseObjectConfig(

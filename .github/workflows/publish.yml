@@ -1,5 +1,10 @@
 name: Publish npm Package
 
+# One repository, three packages, told apart by the release tag:
+#   v1.2.3            @clearideas/consent-analytics            (browser library, repository root)
+#   server-v1.2.3     @clearideas/consent-analytics-server     (server/)
+#   collector-v1.2.3  @clearideas/consent-analytics-collector  (collector/; publish the server
+#                     version it needs first)
 on:
   release:
     types: [published]
@@ -10,7 +15,7 @@ permissions:
 
 jobs:
   publish:
-    if: ${{ vars.NPM_RELEASES_ENABLED == 'true' }}
+    if: ${{ vars.NPM_RELEASES_ENABLED == 'true' && startsWith(github.event.release.tag_name, 'v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +39,139 @@ jobs:
         run: |
           TAG=$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")
           npm publish --access public --tag "$TAG" --ignore-scripts
+
+  publish-server:
+    if: ${{ vars.NPM_RELEASES_ENABLED == 'true' && startsWith(github.event.release.tag_name, 'server-v') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1" --health-interval 2s --health-retries 60
+      moto:
+        image: motoserver/moto:5.2.5
+        ports:
+          - 5000:5000
+    env:
+      REQUIRE_SERVICES: '1'
+      TEST_MONGODB_URL: mongodb://localhost:27017
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_POSTGRES_URL: postgres://postgres@localhost:5432/postgres
+      TEST_MYSQL_URL: mysql://root@127.0.0.1:3306/mysql
+      TEST_AWS_ENDPOINT_URL: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node ../scripts/check-release-tag.mjs server server-v
+      - name: Check public npm dependency age
+        env:
+          NPM_RELEASE_AGE_DAYS: '3'
+        run: node ../scripts/check-npm-release-age.mjs
+      - run: npm ci
+      - run: npm run check
+      - name: Publish public package
+        run: |
+          TAG=$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")
+          npm publish --access public --tag "$TAG" --ignore-scripts
+
+  publish-collector:
+    if: ${{ vars.NPM_RELEASES_ENABLED == 'true' && startsWith(github.event.release.tag_name, 'collector-v') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node ../scripts/check-release-tag.mjs collector collector-v
+      - name: Check public npm dependency age
+        env:
+          NPM_RELEASE_AGE_DAYS: '3'
+        run: node ../scripts/check-npm-release-age.mjs
+      - name: Build the server package
+        working-directory: server
+        run: npm ci && npm run build
+      - run: npm ci
+      # The full collector suite (with services) runs in CI on every push; here: types,
+      # unit tests and the build.
+      - run: npm run type-check
+      - run: SERVICES=none npm test
+      - run: npm run build
+      - name: Depend on the published server version
+        run: |
+          SERVER_VERSION=$(node -p "require('../server/package.json').version")
+          npm view "@clearideas/consent-analytics-server@$SERVER_VERSION" version \
+            || { echo "Publish @clearideas/consent-analytics-server@$SERVER_VERSION first (tag server-v$SERVER_VERSION)"; exit 1; }
+          npm pkg set "dependencies.@clearideas/consent-analytics-server=$SERVER_VERSION"
+      - run: RELEASE=1 npm run check:package
+      - name: Publish public package
+        run: |
+          TAG=$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")
+          npm publish --access public --tag "$TAG" --ignore-scripts
+
+  # Optional: the collector image on GitHub Container Registry (set COLLECTOR_IMAGE_ENABLED).
+  collector-image:
+    if: ${{ vars.COLLECTOR_IMAGE_ENABLED == 'true' && startsWith(github.event.release.tag_name, 'collector-v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: tags
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#collector-v}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/consent-analytics-collector"
+          TAGS="$IMAGE:$VERSION"
+          case "$VERSION" in *-*) ;; *) TAGS="$TAGS,$IMAGE:latest" ;; esac
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: collector/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64

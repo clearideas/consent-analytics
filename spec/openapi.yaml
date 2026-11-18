@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Clear Ideas Browser Analytics Collector API
-  version: 1.0.0
+  version: 1.1.0
   summary: The HTTP contract between @clearideas/consent-analytics (browser) and a collector backend.
   license:
     name: MIT
@@ -32,10 +32,11 @@ info:
       whether consent is required for this visitor (typically based on the
       visitor's region) and the current `policyVersion`. When the policy version
       changes, the browser asks for consent again.
-    * **No cookies.** The browser sends requests without credentials
+    * **No cookies by default.** The browser sends requests without credentials
       (`credentials: 'omit'`). Servers MUST NOT rely on cookies. (`sendBeacon`
       may still attach cookies that exist for the API origin; servers MUST NOT
-      use them to identify visitors.)
+      use them to identify visitors.) The only exception is a site that enables
+      *Credentialed requests* (below).
 
     ## Origins and CORS
 
@@ -46,9 +47,35 @@ info:
       browsers omit for same-origin `GET`.
     * For allowed origins, responses (including error responses) MUST include
       `Access-Control-Allow-Origin: <origin>` and `Vary: Origin`. Servers MUST
-      NOT send `Access-Control-Allow-Credentials`.
+      NOT send `Access-Control-Allow-Credentials`, except for sites that enable
+      *Credentialed requests*.
     * `OPTIONS` preflight requests MUST be answered with `204`, allowing methods
       `GET, POST` and header `Content-Type`, for origins allowed by any site.
+
+    ## Credentialed requests (optional, per site)
+
+    A site MAY enable credentialed requests, so that the collector can identify
+    signed-in visitors from the website's own authentication (for example an
+    `HttpOnly` session cookie). This works when the collector shares the
+    website's origin or its site (registrable domain, e.g. `www.example.com` and
+    `api.example.com`); browsers block cross-site cookies.
+
+    * The client sends credentials (`credentials: 'include'`, or `'same-origin'`
+      when the collector is on the website's origin). `sendBeacon` always
+      attaches cookies, so without this setting only some requests of a
+      credentialed site would carry them: enable both together.
+    * For such a site, responses to its allowed origins MUST include
+      `Access-Control-Allow-Origin: <origin>` (never `*`) and
+      `Access-Control-Allow-Credentials: true`. Browsers discard credentialed
+      responses without them.
+    * The `Origin` allowlist remains mandatory on every `POST`; it is what stops
+      other websites from sending requests with the visitor's cookies.
+    * A server MAY derive a visitor identity from the credentials. An identity
+      MUST come from the server's own authentication, never from the request
+      body, and MUST only be stored with `full` events (and consent records).
+      It MUST NOT be stored with `limited` events.
+    * Sites that do not enable credentialed requests MUST ignore credentials,
+      including cookies attached by `sendBeacon`.
 
     ## Request bodies
 
@@ -67,6 +94,19 @@ info:
       event counts as a duplicate, not an error, so retries are safe.
     * Clients retry a batch after a network error or a `408`, `429` or `5xx`
       response. Other `4xx` responses are final and the batch is dropped.
+    * A server that temporarily cannot store or queue a request SHOULD respond
+      `503` with `Retry-After`; clients retry it like any `5xx`.
+    * Servers MAY store asynchronously (for example through a queue). Then `202`
+      (events) and `201` (consent) mean the data was accepted for storage, and
+      `duplicates` MAY be reported as `0` because duplicates are only recognised
+      when stored. A server that answers before the data is durable (for
+      example, buffered in memory) accepts that a crash can lose it; the client
+      will not resend.
+    * Consent records are retried like events, with an identical body. Servers
+      SHOULD treat records with the same `siteKey`, `consentId`, `decidedAt`,
+      `decision`, `categories` and `policyVersion` as one record, and return the
+      same `recordId` for them. Records are still never updated: a changed
+      decision is a new record.
     * Timestamps from the browser (`occurredAt`, `sentAt`) are not trustworthy.
       Servers SHOULD record their own receive time and MAY use
       `receivedAt - sentAt` to correct clock skew.
@@ -76,30 +116,46 @@ info:
     * `full`: statistics consent was granted, or consent is not required for this
       visitor (and statistics was not explicitly refused).
     * `limited`: consent is required and statistics consent is not given (undecided
-      or refused). Unless the policy says `trackingWithoutConsent: none`, the browser
+      or refused), or the visitor explicitly refused statistics where consent is
+      not required. In both cases `consent.granted` is `false`; `consent.required`
+      tells the two apart. Unless the policy says `trackingWithoutConsent: none`
+      (which applies only where consent is required), the browser
       sends only essential and anonymous events (`page_view`, `page_exit`,
       `auto_metrics`, `web_vital`, `error`) with an allowlisted set of fields. URLs
       are reduced to origin + path, and `sessionId` is a per-tab anonymous
       identifier. Servers MUST NOT join `limited` events with persistent
-      identifiers or with `full` events from the same browser.
+      identifiers or with `full` events from the same browser, and MUST NOT store
+      IP addresses (in any form, including hashed) or server-derived identities
+      with them.
+    * Servers MAY store more with `full` events than the browser sends, for
+      example data derived from the request (location, network, user agent),
+      according to their own data policy.
+    * The fields a `limited` event may carry are listed in `x-limited-tracking`
+      below; the browser's allowlist is tested against it.
 
     ## Standard events
 
     Event names are open-ended (`^[a-z][a-z0-9_]{0,63}$`). The library emits:
 
-    | name | when | notable props |
+    | name | when | props (schema) |
     | --- | --- | --- |
-    | `page_view` | initial load and each route change | `url`, `path`, `referrer`, `title` |
-    | `page_exit` | leaving a page (route change, tab hidden, unload) | `timeSpent`, `clicks`, `keypresses`, `maxScrollDepth` |
-    | `scroll_depth` | new maximum scroll depth ≥ 25% | `depth`, `path` |
-    | `time_spent` | page hidden after ≥ 30 s | `timeSpent` |
-    | `outbound_link_click` | click on a link to another origin | `outboundUrl`, `outboundHost` |
-    | `web_vital` | performance metric observed | `name` (`LCP`, `FID`, `CLS`, `FCP`, `TTFB`), `value` |
-    | `auto_metrics` | page load metrics | `pageLoadTime`, `domContentLoadedTime`, ... |
-    | `error` | `trackError()` | `message` |
+    | `page_view` | initial load and each route change | page context (`PageViewProps`) |
+    | `page_exit` | leaving a page (route change, tab hidden, unload) | engagement: `timeSpent`, `clicks`, `keypresses`, `maxScrollDepth` (`PageExitProps`) |
+    | `scroll_depth` | new maximum scroll depth ≥ 25% | `depth`, `path` (`ScrollDepthProps`) |
+    | `time_spent` | page hidden after ≥ 30 s | `duration`, `timeSpent`, engagement (`TimeSpentProps`) |
+    | `outbound_link_click` | click on a link to another origin | `outboundUrl`, `outboundHost`, `outboundPath`, `outboundText` (`OutboundLinkClickProps`) |
+    | `web_vital` | `FCP`, `TTFB` and `FID` when observed; `LCP`, `CLS` and `INP` when the page is hidden | `name` (`LCP`, `INP`, `CLS`, `FCP`, `TTFB`, `FID`), `value`, page context (`WebVitalProps`) |
+    | `auto_metrics` | DOM ready, and again after `load` | DOM ready: timings and resource totals; load: `fullyLoadedTime`, `pageLoadTime` (`AutoMetricsProps`) |
+    | `error` | `trackError()` | `message` plus the caller's props (`ErrorProps`) |
 
-    In `full` events, `props.attribution` holds first-touch attribution
-    (`utm_*`, `ci_*`, click IDs, `landingPath`, `referrer`, timestamps).
+    Custom events (`trackEvent()`) carry the caller's props. `full` events of every
+    name also carry `FullEventContext`: the browser context (`userAgent`,
+    `timezone`, `language`, ...) and first-touch attribution in
+    `props.attribution` (`utm_*`, `ci_*`, click IDs, `landingPath`, `referrer`,
+    timestamps), with `utm_*`, `ci_*`, `gclid` and `msclkid` repeated at the top
+    level. `x-event-catalog` maps each standard event to its props schema. These
+    schemas describe what the library sends; they are open (other props are
+    allowed) and are not a validation requirement for servers.
 servers:
   - url: '{apiBaseUrl}'
     description: Collector base URL (the library's `apiBaseUrl`)
@@ -164,6 +220,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /v1/events:
     post:
       tags: [events]
@@ -219,6 +277,8 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /v1/consent:
     post:
       tags: [consent]
@@ -268,6 +328,8 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /v1/health:
     get:
       tags: [operations]
@@ -284,6 +346,35 @@ paths:
                 properties:
                   status:
                     const: ok
+x-limited-tracking:
+  description: |
+    What a `limited` event may contain. The browser sends only these event names
+    and these top-level `props` keys in `limited` events (URLs reduced to origin
+    + path); servers use the same lists to sanitize `limited` events.
+  events: [page_view, page_exit, auto_metrics, web_vital, error]
+  fields:
+    [
+      path, url, title, pageTitle,
+      utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+      ci_source, ci_medium, ci_campaign, ci_term, ci_content,
+      gclid, msclkid, fbclid,
+      timeSpent, timeSpentTotal, scrollDepth, pageLoadTime, maxScrollDepth, clicks, keypresses,
+      outboundUrl, outboundHost, outboundPath, outboundLink,
+      viewportBucket, deviceBucket, connectionType,
+      message, name, value,
+      timezone, language, country, continent,
+    ]
+x-event-catalog:
+  description: Props schema for each standard event name (see *Standard events*).
+  events:
+    page_view: '#/components/schemas/PageViewProps'
+    page_exit: '#/components/schemas/PageExitProps'
+    scroll_depth: '#/components/schemas/ScrollDepthProps'
+    time_spent: '#/components/schemas/TimeSpentProps'
+    outbound_link_click: '#/components/schemas/OutboundLinkClickProps'
+    web_vital: '#/components/schemas/WebVitalProps'
+    auto_metrics: '#/components/schemas/AutoMetricsProps'
+    error: '#/components/schemas/ErrorProps'
 components:
   schemas:
     SiteKey:
@@ -496,6 +587,277 @@ components:
           $ref: '#/components/schemas/Identifier'
         recordedAt:
           $ref: '#/components/schemas/Timestamp'
+    PageContextProps:
+      type: object
+      description: Context of the current page, sent with page-level events.
+      properties:
+        url:
+          type: string
+          description: Page URL without fragment; query reduced to an allowlist (origin + path in `limited` events).
+        path:
+          type: string
+        referrer:
+          type: string
+          description: Referring URL, origin + path.
+        title:
+          type: string
+          description: Document title (whitespace collapsed, at most 120 characters).
+        pageTitle:
+          type: string
+          description: Same as `title`.
+        viewportBucket:
+          $ref: '#/components/schemas/ViewportBucket'
+        deviceBucket:
+          $ref: '#/components/schemas/DeviceBucket'
+        connectionType:
+          type: string
+          description: Network Information API effective type (e.g. `4g`), where available.
+    ViewportBucket:
+      type: string
+      description: 'Viewport width bucket: xs < 640 px, sm < 768, md < 1024, lg < 1280, xl otherwise.'
+      enum: [xs, sm, md, lg, xl]
+    DeviceBucket:
+      type: string
+      enum: [mobile, tablet, desktop]
+    EngagementProps:
+      type: object
+      description: Interaction on the current page.
+      properties:
+        timeSpent:
+          type: integer
+          minimum: 0
+          description: Seconds on the page.
+        timeSpentTotal:
+          type: integer
+          minimum: 0
+          description: Same as `timeSpent`.
+        clicks:
+          type: integer
+          minimum: 0
+        keypresses:
+          type: integer
+          minimum: 0
+          description: Key presses, excluding shortcuts.
+        maxScrollDepth:
+          type: integer
+          minimum: 0
+          description: Deepest scroll position reached, in percent of the page height.
+    Attribution:
+      type: object
+      description: First-touch attribution, captured on landing (with statistics consent).
+      properties:
+        gclid:
+          type: string
+        gbraid:
+          type: string
+        wbraid:
+          type: string
+        gtm_debug:
+          type: string
+        msclkid:
+          type: string
+        bat_debug:
+          type: string
+        fbclid:
+          type: string
+        utm_source:
+          type: string
+        utm_medium:
+          type: string
+        utm_campaign:
+          type: string
+        utm_term:
+          type: string
+        utm_content:
+          type: string
+        utm_context:
+          type: string
+        ci_source:
+          type: string
+        ci_medium:
+          type: string
+        ci_campaign:
+          type: string
+        ci_term:
+          type: string
+        ci_content:
+          type: string
+        referrer:
+          type: string
+        landingPath:
+          type: string
+        landedAt:
+          type: string
+        firstSeen:
+          type: string
+        lastSeen:
+          type: string
+    FullEventContext:
+      type: object
+      description: |
+        Added by the browser to every `full` event, whatever its name. (`limited`
+        events carry only `timezone`, `language`, `country` and `continent` of these.)
+      properties:
+        userAgent:
+          type: string
+        referrer:
+          type: string
+          description: '`document.referrer`, origin + path.'
+        title:
+          type: string
+        pageTitle:
+          type: string
+        viewportBucket:
+          $ref: '#/components/schemas/ViewportBucket'
+        deviceBucket:
+          $ref: '#/components/schemas/DeviceBucket'
+        connectionType:
+          type: string
+        timezone:
+          type: string
+          description: IANA time zone, e.g. `Europe/Berlin`.
+        language:
+          type: string
+          description: '`navigator.language`, e.g. `de-DE`.'
+        country:
+          type: string
+          description: Country from the cached `GET /v1/context` answer, if any.
+        continent:
+          type: string
+        attribution:
+          $ref: '#/components/schemas/Attribution'
+        utm_source:
+          type: string
+        utm_medium:
+          type: string
+        utm_campaign:
+          type: string
+        utm_term:
+          type: string
+        utm_content:
+          type: string
+        utm_context:
+          type: string
+        ci_source:
+          type: string
+        ci_medium:
+          type: string
+        ci_campaign:
+          type: string
+        ci_term:
+          type: string
+        ci_content:
+          type: string
+        gclid:
+          type: string
+        msclkid:
+          type: string
+        propsTruncated:
+          type: boolean
+          description: Set (and all other props dropped) when an event's props were too large to send.
+    PageViewProps:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+    PageExitProps:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+        - $ref: '#/components/schemas/EngagementProps'
+    ScrollDepthProps:
+      type: object
+      properties:
+        depth:
+          type: integer
+          minimum: 0
+          description: New maximum scroll depth, in percent (at least 25).
+        path:
+          type: string
+    TimeSpentProps:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+        - $ref: '#/components/schemas/EngagementProps'
+      properties:
+        duration:
+          type: integer
+          minimum: 0
+          description: Seconds on the page (same as `timeSpent`).
+    OutboundLinkClickProps:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+        - $ref: '#/components/schemas/EngagementProps'
+      properties:
+        outboundUrl:
+          type: string
+          description: Link target, origin + path.
+        outboundHost:
+          type: string
+        outboundPath:
+          type: string
+        outboundText:
+          type: string
+          description: Link text (whitespace collapsed, at most 120 characters).
+    WebVitalProps:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+      properties:
+        name:
+          type: string
+          description: |
+            `LCP`, `FCP` and `TTFB` describe the page the visitor landed on (once per
+            document); `CLS` and `INP` are reported again when they change. `INP` (added in
+            1.1) replaces `FID` as the responsiveness metric; `FID` is still sent where
+            browsers measure it.
+          enum: [LCP, FID, CLS, FCP, TTFB, INP]
+        value:
+          type: number
+          description: Milliseconds, except `CLS` (unitless, 3 decimals).
+    AutoMetricsProps:
+      type: object
+      description: |
+        Sent twice per page: at DOM ready (navigation timings, resource totals and
+        engagement so far) and after `load` (`fullyLoadedTime`, `pageLoadTime`).
+        Times are milliseconds from navigation start; sizes are bytes.
+      allOf:
+        - $ref: '#/components/schemas/PageContextProps'
+        - $ref: '#/components/schemas/EngagementProps'
+      properties:
+        domContentLoadedTime:
+          type: integer
+          minimum: 0
+        domInteractiveTime:
+          type: integer
+          minimum: 0
+        totalResources:
+          type: integer
+          minimum: 0
+        cachedResources:
+          type: integer
+          minimum: 0
+        totalTransferSize:
+          type: integer
+          minimum: 0
+        totalEncodedSize:
+          type: integer
+          minimum: 0
+        totalDecodedSize:
+          type: integer
+          minimum: 0
+        fullyLoadedTime:
+          type: integer
+          minimum: 0
+        pageLoadTime:
+          type: integer
+          minimum: 0
+    ErrorProps:
+      type: object
+      description: '`message`, plus any props the caller passed to `trackError()`.'
+      properties:
+        message:
+          type: string
     FieldError:
       type: object
       additionalProperties: false
@@ -557,6 +919,16 @@ components:
             $ref: '#/components/schemas/Problem'
     TooManyRequests:
       description: Rate limited. Clients retry later; `Retry-After` SHOULD be set.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ServiceUnavailable:
+      description: Storage or queue temporarily unavailable. Clients retry later; `Retry-After` SHOULD be set.
       headers:
         Retry-After:
           schema:

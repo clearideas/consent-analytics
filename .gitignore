@@ -82,3 +82,13 @@ jspm_packages/
 sample-host/data/
 test-results/
 playwright-report/
+
+# Server package: local test services
+server/.cache/
+
+# Collector package: local SQLite data
+collector/data/
+
+# Documentation site build
+docs/.vitepress/dist/
+docs/.vitepress/cache/

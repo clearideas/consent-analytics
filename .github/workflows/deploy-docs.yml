@@ -1,0 +1,90 @@
+name: Deploy documentation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-docs.yml'
+      - 'docs/**'
+      - 'infrastructure/docs-hosting.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consent-analytics-documentation
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Build the documentation
+        working-directory: docs
+        run: npm ci && npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: documentation
+          path: docs/.vitepress/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: documentation
+      url: https://content-analytics.clearideas.com
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DOCS_BUCKET: ${{ vars.DOCS_S3_BUCKET }}
+      DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      DOCS_URL: https://content-analytics.clearideas.com
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: documentation
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: consent-analytics-documentation
+          aws-region: us-east-1
+      - name: Upload documentation
+        run: |
+          set -euo pipefail
+          : "${DOCS_BUCKET:?Set DOCS_S3_BUCKET in the documentation environment}"
+          : "${DISTRIBUTION_ID:?Set CLOUDFRONT_DISTRIBUTION_ID in the documentation environment}"
+          # Keep hashed bundles available to readers who still have the previous HTML open.
+          aws s3 sync dist/assets "s3://$DOCS_BUCKET/assets" \
+            --cache-control 'public,max-age=31536000,immutable' --only-show-errors
+          aws s3 sync dist "s3://$DOCS_BUCKET" --exclude 'assets/*' --delete \
+            --cache-control 'public,max-age=0,must-revalidate' --only-show-errors
+      - name: Refresh CloudFront
+        run: |
+          set -euo pipefail
+          invalidation_id=$(aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" --paths '/*' --query 'Invalidation.Id' --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$DISTRIBUTION_ID" --id "$invalidation_id"
+      - name: Verify the public site
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 "$DOCS_URL/" | grep 'Consent Analytics' > /dev/null
+          curl --fail --silent --show-error "$DOCS_URL/server/quickstart" | grep 'collector' > /dev/null
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$DOCS_URL/this-page-does-not-exist")
+          test "$status" = 404

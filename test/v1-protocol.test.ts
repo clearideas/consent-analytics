@@ -85,6 +85,29 @@ describe('transport', () => {
     }
   })
 
+  it('credentials: "include" sends cookies on every collector request (opt-in)', async () => {
+    const { api } = await boot({
+      geo: CONSENT_REQUIRED_GEO,
+      beacon: 'unavailable',
+      config: { credentials: 'include' },
+    })
+    document.getElementById('ci-consent-accept')!.click()
+    await settle()
+
+    const fetches = api.requests.filter(r => r.transport === 'fetch')
+    expect(fetches.map(r => r.path)).toEqual(
+      expect.arrayContaining(['/v1/context', '/v1/events', '/v1/consent']),
+    )
+    for (const request of fetches) expect(request.credentials).toBe('include')
+  })
+
+  it('credentials: "same-origin" is passed through; invalid values mean "omit"', async () => {
+    const { requestCredentials } = await import('../src/core')
+    expect(requestCredentials({ credentials: 'same-origin' })).toBe('same-origin')
+    expect(requestCredentials({})).toBe('omit')
+    expect(requestCredentials({ credentials: 'always' as any })).toBe('omit')
+  })
+
   it('makes no legacy requests and removes the legacy stored user ID', async () => {
     localStorage.setItem('ci_session_status', JSON.stringify({ timestamp: 1, userId: 'user-123' }))
 
