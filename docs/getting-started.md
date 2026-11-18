@@ -13,30 +13,18 @@ Requirements:
 - Node.js 24.15 or newer, or 22.22 or newer
 - a terminal and a browser
 
-::: tip Versions
-These docs follow the `main` branch. The collector packages
-(`@clearideas/consent-analytics-server` and `@clearideas/consent-analytics-collector`) are
-not published yet, and several browser features described here (categories, the settings
-link, the plugin directory, ...) are newer than the `0.1.1` release on npm; see the
-[changelog](https://github.com/clearideas/consent-analytics/blob/main/CHANGELOG.md). So
-this quick start builds everything from a checkout.
-:::
-
 ## 1. Start a collector
 
-Get the repository and build the browser library, the collector library and the
-standalone collector:
+Create an empty project and install the browser library and standalone collector:
 
 ```sh
-git clone https://github.com/clearideas/consent-analytics.git
-cd consent-analytics
-npm ci && npm run build
-(cd server && npm ci && npm run build)
-(cd collector && npm ci && npm run build)
+mkdir consent-analytics-demo && cd consent-analytics-demo
+npm init -y
+npm install @clearideas/consent-analytics @clearideas/consent-analytics-collector
 ```
 
 Register your site. A site has a public **site key** and the exact **origins** (scheme,
-host and port) of the pages allowed to use it. Save this as `collector/sites.json`:
+host and port) of the pages allowed to use it. Save this as `sites.json`:
 
 ```json
 [
@@ -53,8 +41,7 @@ see the consent banner; on a real deployment the country comes from your CDN or 
 lookup (see [Sites, origins and location](./server/sites-and-geo.md)).
 
 ```sh
-cd collector
-SITES_FILE=./sites.json DEFAULT_COUNTRY=DE node dist/cli.js
+HOST=127.0.0.1 SITES_FILE=./sites.json DEFAULT_COUNTRY=DE npx consent-analytics-collector
 ```
 
 It listens on `http://localhost:8787` and stores to SQLite in `./data/analytics.db`. In
@@ -70,10 +57,12 @@ The second answer says `"consentRequired":true` for `"country":"DE"`.
 
 ## 2. Add the library to a page
 
-In an empty folder next to the checkout, copy the script-tag build of the library:
+In a second terminal, open the `consent-analytics-demo` folder and copy the script and its
+built-in plugin files into a folder for the demo site:
 
 ```sh
-mkdir my-site && cp consent-analytics/dist/analytics.js my-site/
+mkdir my-site
+cp -R node_modules/@clearideas/consent-analytics/dist/. my-site/
 ```
 
 and save this as `my-site/index.html`:

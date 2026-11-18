@@ -6,9 +6,6 @@ collector library,
 [`@clearideas/consent-analytics-server`](https://github.com/clearideas/consent-analytics/tree/main/server),
 and includes the drivers for every store and queue the library supports.
 
-> **Status: 0.1.0, not yet published on npm.** Until it is, run it from a checkout of the
-> repository, as below.
-
 Use this package for a collector as its own service. To add the collector to an API you
 already run (Express, `node:http`, Fetch platforms), use the collector library: it's one
 middleware.
@@ -19,15 +16,12 @@ every environment variable, modes, Docker, metrics and logs.
 ## Quick start
 
 ```sh
-git clone https://github.com/clearideas/consent-analytics.git
-cd consent-analytics
-(cd server && npm ci && npm run build)
-cd collector && npm ci && npm run build
-SITES_FILE=./sites.example.json node dist/cli.js
+npm install @clearideas/consent-analytics-collector
+SITES_FILE=./sites.json npx consent-analytics-collector
 ```
 
 - It listens on port 8787 and stores to SQLite in `./data/analytics.db`.
-- Sites come from `SITES_FILE`, a JSON array (see [`sites.example.json`](./sites.example.json)),
+- Sites come from `SITES_FILE`, a JSON array (see the [example site configuration](https://content-analytics.clearideas.com/server/collector#sites)),
   and/or a MongoDB collection (`SITES_MONGODB_COLLECTION`).
 - In the browser: `apiBaseUrl: 'http://localhost:8787/'` and your `siteKey`.
 - `--check` validates the configuration and exits. An invalid configuration is refused at

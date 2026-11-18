@@ -1,10 +1,6 @@
 # Changelog
 
-## 0.1.1 — November 12, 2026
-
-Stable publication of the production-validated public browser package. Runtime behavior is unchanged from `0.1.0-rc.1`; release metadata and consumer versions move to stable.
-
-## Unreleased
+## 0.2.0 — November 18, 2026
 
 ### Documentation
 - **A documentation site** (VitePress) in `docs/`: a quick start, core concepts, the browser library (frameworks, configuration, consent, events, attribution, third-party tools, signed-in visitors, privacy and security, API reference, troubleshooting), the collector (Express, `node:http` and Fetch, sites and location, data policies, rules, identity, delivery, storage with example queries, stored data, Redis, retention, configuration, the standalone collector, production, custom adapters, troubleshooting), the collector API and the playground. Run it with `npm ci --prefix docs && npm run docs:dev`; CI builds it (`docs` job), failing on dead links.
@@ -47,7 +43,7 @@ These changes are additive. Existing clients and collectors remain valid.
 - The demo website moved to `/site/` and is a standalone page; a wiretap records what the library sends. The end-to-end tests run every scenario (`e2e/playground-pages.spec.ts`).
 - The sample host takes `DATA_POLICY=strict|balanced` (default `strict`); the playground uses `balanced` to show the server-side enrichment. New `/_dev/info`.
 
-### Collector library and standalone collector (new packages, not yet published)
+### Collector library and standalone collector (0.1.0)
 - New package `server/` (`@clearideas/consent-analytics-server`). It has **no runtime or peer dependencies**. The first part is the protocol module: validators and types generated from the spec, tested to behave exactly like Ajv.
 - Collector core with `node:http` and Fetch API transports, an in-memory store, static sites and header geo. The contract tests run through every transport.
 - `test/client-host.test.ts` now runs the browser library against both the reference collector and the new server.
@@ -150,6 +146,10 @@ These changes are additive. Existing clients and collectors remain valid.
 - `startAutoTracking()` is idempotent; `stopAutoTracking()` removes listeners and observers.
 - Cleaning attribution parameters from the URL preserves `history.state` (Vue Router navigation state).
 - Vite: `VITE_WEBSITE_BASE_URL` now sets the consent banner's privacy link.
+
+## 0.1.1 — November 12, 2026
+
+Stable publication of the production-validated public browser package. Runtime behavior is unchanged from `0.1.0-rc.1`; release metadata and consumer versions move to stable.
 
 ## 0.1.0
 
